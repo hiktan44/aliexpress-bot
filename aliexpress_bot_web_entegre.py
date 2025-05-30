@@ -736,13 +736,16 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
             is_successful = (
                 urun_adi != "Bilgi bulunamadı" and 
                 fiyat != "Fiyat bulunamadı" and 
-                len(urun_adi) > 10
+                len(urun_adi) > 10 and
+                "bulunamadı" not in urun_adi.lower()
             )
             
             if not is_successful:
                 print("❌ Yeterli ürün bilgisi bulunamadı - BAŞARISIZ")
                 print(f"❌ BAŞARISIZ: Yetersiz veri - {urun_adi[:30]}...")
-                return {
+                
+                # Başarısız durumda da log yazalım
+                sonuc = {
                     'Link': link,
                     'Ürün Adı': urun_adi,
                     'Fiyat': fiyat,
@@ -750,6 +753,13 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
                     'YZ HS Kod': 'Veri yetersiz',
                     'Durum': 'Başarısız - Bilgi eksik'
                 }
+                
+                print(f"💰 Fiyat: {fiyat}")
+                print(f"🖼️ Resim: {'✅' if resim_url != 'Resim bulunamadı' else '❌'}")
+                print(f"🧠 HS Kod: Veri yetersiz")
+                print(f"❌ BAŞARISIZ: {urun_adi[:40]}...")
+                
+                return sonuc
             
             # HS Kodu AI ile tespit et
             hs_kod = "API Key gerekli"
@@ -766,16 +776,11 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
                 'Durum': 'Başarılı'
             }
             
-            print(f"\u2705 Ürün: {urun_adi[:40]}...")
+            print(f"✅ Ürün: {urun_adi[:40]}...")
             print(f"💰 Fiyat: {fiyat}")
             print(f"🖼️ Resim: {'✅' if resim_url != 'Resim bulunamadı' else '❌'}")
             print(f"🧠 HS Kod: {hs_kod}")
-            
-            # Sonuç logunu yazdır
-            if is_successful:
-                print(f"✅ BAŞARILI: {urun_adi[:40]}...")
-            else:
-                print(f"❌ BAŞARISIZ: Yetersiz veri - {urun_adi[:20]}...")
+            print(f"✅ BAŞARILI: {urun_adi[:40]}...")
             
             return sonuc
             

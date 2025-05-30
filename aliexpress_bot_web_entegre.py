@@ -509,6 +509,853 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
             print(f"❌ Hybrid browser hatası: {e}")
             return False
     
+    def scrape_do_captcha_bypass(self, link):
+        """Scrape.do ile CAPTCHA bypass denemesi"""
+        try:
+            print("🔧 Scrape.do CAPTCHA bypass deneniyor...")
+            
+            # Scrape.do API endpoint
+            scrape_api_url = "https://api.scrape.do"
+            
+            # API key check
+            scrape_api_key = os.getenv('SCRAPE_API_KEY')
+            if not scrape_api_key:
+                print("⚠️ Scrape.do API key bulunamadı")
+                return False
+            
+            # Scrape.do request
+            params = {
+                'url': link,
+                'token': scrape_api_key,
+                'render': True,
+                'country': 'US'
+            }
+            
+            response = requests.get(scrape_api_url, params=params, timeout=30)
+            
+            if response.status_code == 200:
+                # HTML'i kontrol et - CAPTCHA var mı?
+                html_content = response.text
+                
+                # CAPTCHA indicators
+                captcha_indicators = [
+                    'captcha', 'geetest', 'recaptcha', 'slider',
+                    'verify', 'challenge', 'robot'
+                ]
+                
+                # HTML'de CAPTCHA var mı kontrol et
+                has_captcha = any(indicator in html_content.lower() for indicator in captcha_indicators)
+                
+                if not has_captcha:
+                    print("✅ Scrape.do CAPTCHA'yı geçti!")
+                    
+                    # HTML'den veri çek
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(html_content, 'html.parser')
+                    
+                    # Ürün adı
+                    title = soup.find('title')
+                    urun_adi = title.text.strip() if title else "Bilgi bulunamadı"
+                    
+                    # Fiyat
+                    fiyat = "Fiyat bulunamadı"
+                    price_elements = soup.find_all(text=lambda text: text and ('
+        """Hybrid CAPTCHA Handler - Railway'de web modal, Local'de visible"""
+        
+        # CAPTCHA kontrol selectors
+        captcha_selectors = [
+            "iframe[src*='captcha']",
+            ".nc_wrapper", 
+            ".geetest",
+            "[class*='captcha']",
+            "[id*='captcha']", 
+            ".slider-track",
+            ".verify-code",
+            "[data-sitekey]",
+            ".captcha-container"
+        ]
+        
+        # CAPTCHA var mı kontrol et
+        captcha_detected = False
+        captcha_type = ""
+        
+        for selector in captcha_selectors:
+            elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+            if elements:
+                captcha_detected = True
+                captcha_type = selector
+                print(f"\n🤖 CAPTCHA TESPİT EDİLDİ: {selector}")
+                break
+        
+        if captcha_detected:
+            # Railway production check
+            is_production = (
+                os.environ.get('RAILWAY_ENVIRONMENT') or 
+                os.environ.get('PORT') or
+                os.path.exists('/app')
+            )
+            
+            if is_production:
+                print("🌐 RAILWAY PRODUCTION: Web Modal CAPTCHA sistemi aktif")
+                
+                # CAPTCHA screenshot al
+                try:
+                    screenshot_data = self.driver.get_screenshot_as_base64()
+                    page_url = self.driver.current_url
+                    page_title = self.driver.title
+                    
+                    # CAPTCHA bilgilerini global değişkende sakla
+                    global captcha_waiting, captcha_data
+                    captcha_waiting = True
+                    captcha_data = {
+                        'detected': True,
+                        'type': captcha_type,
+                        'screenshot': screenshot_data,
+                        'url': page_url,
+                        'title': page_title,
+                        'timestamp': time.time()
+                    }
+                    
+                    print("📸 CAPTCHA screenshot alındı")
+                    print("🌐 Web arayüzünde CAPTCHA modal açılacak...")
+                    print("👤 Kullanıcı müdahalesini bekliyorum...")
+                    
+                    # Web modal'dan yanıt bekle
+                    max_wait = 300  # 5 dakika
+                    waited = 0
+                    
+                    while captcha_waiting and waited < max_wait:
+                        time.sleep(3)
+                        waited += 3
+                        
+                        # Kullanıcı aksiyonu kontrol et
+                        global captcha_action
+                        if captcha_action == 'solved':
+                            print("✅ Kullanıcı CAPTCHA'ı çözdü!")
+                            captcha_waiting = False
+                            captcha_action = None
+                            captcha_data = None
+                            
+                            # Sayfa yenilenmesini bekle
+                            time.sleep(3)
+                            return True
+                            
+                        elif captcha_action == 'skip':
+                            print("⏭️ Kullanıcı ürünü atlamayı seçti")
+                            captcha_waiting = False
+                            captcha_action = None
+                            captcha_data = None
+                            return "skip"
+                        
+                        # Progress göster
+                        if waited % 30 == 0:
+                            remaining = max_wait - waited
+                            print(f"⏰ CAPTCHA çözme bekleniyor... Kalan: {remaining}s")
+                    
+                    print("⏰ CAPTCHA bekleme süresi doldu")
+                    captcha_waiting = False
+                    captcha_data = None
+                    return "skip"
+                    
+                except Exception as e:
+                    print(f"❌ CAPTCHA screenshot hatası: {e}")
+                    return "skip"
+        
+        return False
+    
+    def sayfa_tamamen_yukle(self):
+        """Sayfayı tamamen yükle"""
+        time.sleep(5)
+        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(2)
+        self.driver.execute_script("window.scrollTo(0, 0);")
+        time.sleep(2)
+    
+    def tum_fiyatlari_bul(self):
+        """Sayfadaki TÜM fiyat bilgilerini bul"""
+        try:
+            all_text_with_price = self.driver.execute_script("""
+                var priceTexts = [];
+                var allElements = document.querySelectorAll('*');
+                
+                for (var i = 0; i < allElements.length; i++) {
+                    var text = allElements[i].innerText || allElements[i].textContent || '';
+                    if (text && text.length < 100 && text.length > 2) {
+                        if (text.includes('TL') || text.includes('₺') || text.includes('$') || 
+                            text.includes('€') || text.includes('US') || text.includes('USD')) {
+                            var numbers = text.match(/[0-9.,]+/g);
+                            if (numbers && numbers.length > 0) {
+                                priceTexts.push(text.trim());
+                            }
+                        }
+                    }
+                }
+                return priceTexts;
+            """)
+            
+            for text in all_text_with_price:
+                if any(currency in text for currency in ['TL', '₺', '$', '€', 'US']):
+                    if 3 <= len(text) <= 50 and any(char.isdigit() for char in text):
+                        return text
+            
+            return "Fiyat bulunamadı"
+            
+        except Exception as e:
+            return "Fiyat bulunamadı"
+    
+    def tum_resimleri_bul(self):
+        """Sayfadaki TÜM ürün resimlerini bul"""
+        try:
+            all_images = self.driver.execute_script("""
+                var imageUrls = [];
+                var allImages = document.querySelectorAll('img');
+                
+                for (var i = 0; i < allImages.length; i++) {
+                    var src = allImages[i].src;
+                    if (src && src.includes('http') && 
+                        (src.includes('aliexpress') || src.includes('alicdn'))) {
+                        if (src.includes('.jpg') || src.includes('.png') || src.includes('.webp')) {
+                            imageUrls.push(src);
+                        }
+                    }
+                }
+                return imageUrls;
+            """)
+            
+            for img_url in all_images:
+                if any(size in img_url for size in ['_640x640', '_500x500', '_400x400', '.jpg']):
+                    return img_url
+            
+            if all_images:
+                return all_images[0]
+            
+            return "Resim bulunamadı"
+            
+        except Exception as e:
+            return "Resim bulunamadı"
+    
+    def ultra_guclu_veri_cek(self, link):
+        """Ultra güçlü veri çekme"""
+        try:
+            print(f"\n💪 ÜRÜN {self.current_index + 1}/{self.total_links}")
+            print(f"🔗 {link[:60]}...")
+            
+            # Sayfaya git (headless modda)
+            self.driver.get(link)
+            time.sleep(3)
+            
+            # Hybrid CAPTCHA handler
+            captcha_result = self.hybrid_captcha_handler()
+            if captcha_result == "skip":
+                print("⏭️ CAPTCHA nedeniyle ürün atlandı")
+                return {
+                    'Link': link,
+                    'Ürün Adı': 'CAPTCHA - Atlandı',
+                    'Fiyat': 'Atlandı',
+                    'Resim URL': 'Atlandı',
+                    'YZ HS Kod': 'Atlandı',
+                    'Durum': 'CAPTCHA Skip'
+                }
+            elif captcha_result:
+                print("✅ CAPTCHA başarıyla çözüldü (Hybrid)")
+            
+            # Sayfayı tamamen yükle
+            self.sayfa_tamamen_yukle()
+            
+            # Ürün adı
+            urun_adi = "Bilgi bulunamadı"
+            try:
+                title = self.driver.title
+                if title and len(title) > 10 and 'AliExpress' not in title:
+                    urun_adi = title[:200]
+                else:
+                    h1_elements = self.driver.find_elements(By.TAG_NAME, "h1")
+                    for h1 in h1_elements:
+                        text = h1.text.strip()
+                        if text and len(text) > 10:
+                            urun_adi = text[:200]
+                            break
+            except:
+                pass
+            
+            # Fiyat ve resim
+            fiyat = self.tum_fiyatlari_bul()
+            resim_url = self.tum_resimleri_bul()
+            
+            # Başarı kontrolü - Bilgi bulunamadıysa BAŞARISIZ
+            is_successful = (
+                urun_adi != "Bilgi bulunamadı" and 
+                fiyat != "Fiyat bulunamadı" and 
+                len(urun_adi) > 10 and
+                "bulunamadı" not in urun_adi.lower()
+            )
+            
+            if not is_successful:
+                print("❌ Yeterli ürün bilgisi bulunamadı - BAŞARISIZ")
+                print(f"❌ BAŞARISIZ: Yetersiz veri - {urun_adi[:30]}...")
+                
+                # Başarısız durumda da log yazalım
+                sonuc = {
+                    'Link': link,
+                    'Ürün Adı': urun_adi,
+                    'Fiyat': fiyat,
+                    'Resim URL': resim_url,
+                    'YZ HS Kod': 'Veri yetersiz',
+                    'Durum': 'Başarısız - Bilgi eksik'
+                }
+                
+                print(f"💰 Fiyat: {fiyat}")
+                print(f"🖼️ Resim: {'✅' if resim_url != 'Resim bulunamadı' else '❌'}")
+                print(f"🧠 HS Kod: Veri yetersiz")
+                print(f"❌ BAŞARISIZ: {urun_adi[:40]}...")
+                
+                return sonuc
+            
+            # HS Kodu AI ile tespit et
+            hs_kod = "API Key gerekli"
+            if self.gemini_api_key or self.openai_api_key:
+                hs_kod = self.ai_hs_kod_tespit(urun_adi, resim_url)
+            
+            # Sonuç
+            sonuc = {
+                'Link': link,
+                'Ürün Adı': urun_adi,
+                'Fiyat': fiyat,
+                'Resim URL': resim_url,
+                'YZ HS Kod': hs_kod,
+                'Durum': 'Başarılı'
+            }
+            
+            print(f"✅ Ürün: {urun_adi[:40]}...")
+            print(f"💰 Fiyat: {fiyat}")
+            print(f"🖼️ Resim: {'✅' if resim_url != 'Resim bulunamadı' else '❌'}")
+            print(f"🧠 HS Kod: {hs_kod}")
+            print(f"✅ BAŞARILI: {urun_adi[:40]}...")
+            
+            return sonuc
+            
+        except Exception as e:
+            print(f"❌ Hata: {str(e)[:50]}")
+            return {
+                'Link': link,
+                'Ürün Adı': 'Hata',
+                'Fiyat': 'Hata',
+                'Resim URL': 'Hata',
+                'YZ HS Kod': 'Hata',
+                'Durum': f'Hata: {str(e)[:30]}'
+            }
+    
+    def bot_calistir(self):
+        """Ana bot fonksiyonu"""
+        try:
+            print("💪 AliExpress Veri Çekme Uygulaması başlıyor!")
+            
+            if not self.browser_baslat():
+                return
+            
+            # Her ürün için işlem
+            for i, link in enumerate(self.linkler):
+                if not self.is_running:
+                    break
+                    
+                self.current_index = i + 1
+                
+                # Ürün bilgilerini çek
+                sonuc = self.ultra_guclu_veri_cek(link)
+                
+                # Başarı durumunu kontrol et
+                if sonuc and sonuc['Durum'] == 'Başarılı':
+                    self.sonuclar.append(sonuc)
+                    self.basarili += 1
+                    
+                    # Orijinal Excel'i güncelle
+                    self.excel_verisini_guncelle(i, sonuc)
+                    
+                    print(f"✅ BAŞARILI: {sonuc['Ürün Adı'][:30]}...")
+                    
+                elif sonuc and 'Başarısız' in sonuc['Durum']:
+                    self.sonuclar.append(sonuc)  # Başarısız sonucu da kaydet
+                    self.basarisiz += 1
+                    
+                    print(f"❌ BAŞARISIZ: {sonuc['Durum']}")
+                    
+                else:
+                    self.basarisiz += 1
+                    
+                    print(f"❌ HATA: {sonuc.get('Durum', 'Bilinmeyen hata') if sonuc else 'Sonuç alınamadı'}")
+                
+                # Web arayüzüne gönder
+                self.web_sonuc_ekle(sonuc)
+                self.web_durumu_guncelle()
+                
+                # Bekleme
+                time.sleep(random.uniform(4, 8))
+            
+            # Bitirme
+            self.is_running = False
+            
+            # Final kayıt
+            df_final = pd.DataFrame(self.sonuclar)
+            df_final.to_excel('sonuclar_web_entegre.xlsx', index=False)
+            
+            print(f"\n🏁 İŞLEM BİTTİ!")
+            print(f"✅ Başarılı: {self.basarili}")
+            print(f"❌ Başarısız: {self.basarisiz}")
+            print(f"💾 Excel: sonuclar_web_entegre.xlsx")
+            
+            self.web_durumu_guncelle()
+            
+        except Exception as e:
+            print(f"❌ Bot hatası: {e}")
+            self.is_running = False
+            self.web_durumu_guncelle()
+        finally:
+            if self.driver:
+                self.driver.quit()
+
+# Global CAPTCHA state
+captcha_waiting = False
+captcha_action = None
+captcha_data = None
+
+# Global veri çekme uygulaması instance
+uygulama = AliExpressVeriCekmeUygulamasi()
+
+# Flask routes
+@app.route('/')
+def index():
+    return render_template('bot_arayuz.html')
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    try:
+        print("Upload request received")
+        
+        # Check if file exists in request
+        if 'file' not in request.files:
+            print("No file in request")
+            return jsonify({
+                'success': False,
+                'message': 'Dosya seçilmedi'
+            })
+        
+        file = request.files['file']
+        print(f"File received: {file.filename}")
+        
+        # Check if file is selected
+        if file.filename == '':
+            print("Empty filename")
+            return jsonify({
+                'success': False,
+                'message': 'Dosya seçilmedi'
+            })
+        
+        # Check file extension
+        if not (file.filename.endswith('.xlsx') or file.filename.endswith('.xls')):
+            print(f"Invalid file type: {file.filename}")
+            return jsonify({
+                'success': False,
+                'message': 'Geçersiz dosya formatı. Sadece .xlsx ve .xls desteklenir'
+            })
+        
+        # Save file temporarily
+        temp_path = f"temp_{file.filename}"
+        file.save(temp_path)
+        print(f"File saved to: {temp_path}")
+        
+        # Read Excel file
+        df = pd.read_excel(temp_path)
+        print(f"Excel read successfully. Shape: {df.shape}")
+        print(f"Columns: {df.columns.tolist()}")
+        
+        # Orijinal Excel verisini sakla
+        uygulama.original_df = df.copy()
+        uygulama.excel_columns = df.columns.tolist()
+        
+        # Check if 'Link' column exists
+        link_column = None
+        if 'Link' in df.columns:
+            link_column = 'Link'
+        else:
+            # Try alternative column names
+            link_columns = [col for col in df.columns if 'link' in col.lower() or 'url' in col.lower()]
+            if link_columns:
+                link_column = link_columns[0]
+                print(f"Found link column: '{link_column}'")
+            else:
+                os.remove(temp_path)
+                return jsonify({
+                    'success': False,
+                    'message': f"'Link' sütunu bulunamadı. Mevcut sütunlar: {', '.join(df.columns)}",
+                    'columns': df.columns.tolist()
+                })
+        
+        # Get links
+        uygulama.linkler = df[link_column].dropna().tolist()
+        uygulama.total_links = len(uygulama.linkler)
+        print(f"Links extracted: {uygulama.total_links}")
+        
+        # Clean up temp file
+        os.remove(temp_path)
+        
+        # Update web status
+        uygulama.web_durumu_guncelle()
+        
+        return jsonify({
+            'success': True,
+            'count': len(uygulama.linkler),
+            'message': f'{len(uygulama.linkler)} ürün linki yüklendi',
+            'columns': uygulama.excel_columns,
+            'link_column': link_column
+        })
+        
+    except Exception as e:
+        print(f"Upload error: {str(e)}")
+        # Clean up temp file if exists
+        temp_path = f"temp_{request.files.get('file', type('obj', (object,), {'filename': 'unknown'})).filename}"
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+            
+        return jsonify({
+            'success': False,
+            'message': f'Dosya yükleme hatası: {str(e)}'
+        })
+
+@app.route('/start', methods=['POST'])
+def start_process():
+    if not uygulama.is_running and uygulama.linkler:
+        uygulama.is_running = True
+        uygulama.current_index = 0
+        uygulama.basarili = 0
+        uygulama.basarisiz = 0
+        uygulama.manuel_captcha = 0
+        uygulama.sonuclar = []
+        
+        # Önceki sonuçları temizle
+        if os.path.exists(uygulama.results_file):
+            os.remove(uygulama.results_file)
+        
+        # İşlemi ayrı thread'de çalıştır
+        Thread(target=uygulama.bot_calistir, daemon=True).start()
+        
+        return jsonify({'success': True, 'message': 'Veri çekme işlemi başlatıldı'})
+    else:
+        return jsonify({'success': False, 'message': 'İşlem zaten çalışıyor veya link yok'})
+
+@app.route('/stop', methods=['POST'])
+def stop_process():
+    uygulama.is_running = False
+    return jsonify({'success': True, 'message': 'İşlem durduruldu'})
+
+@app.route('/status')
+def get_status():
+    try:
+        if os.path.exists(uygulama.status_file):
+            with open(uygulama.status_file, 'r', encoding='utf-8') as f:
+                return jsonify(json.load(f))
+        else:
+            return jsonify({
+                'is_running': False,
+                'current_index': 0,
+                'total_links': 0,
+                'basarili': 0,
+                'basarisiz': 0,
+                'captcha': 0,
+                'progress': 0
+            })
+    except:
+        return jsonify({'error': 'Status okunamadı'})
+
+@app.route('/results')
+def get_results():
+    try:
+        if os.path.exists(uygulama.results_file):
+            with open(uygulama.results_file, 'r', encoding='utf-8') as f:
+                return jsonify(json.load(f))
+        else:
+            return jsonify([])
+    except:
+        return jsonify([])
+
+@app.route('/set_column_mapping', methods=['POST'])
+def set_column_mapping():
+    try:
+        data = request.get_json()
+        mapping = data.get('mapping', {})
+        
+        # Sütun eşleştirmesini kaydet
+        uygulama.column_mapping = mapping
+        print(f"Column mapping saved: {mapping}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Sütun eşleştirmesi kaydedildi'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Sütun eşleştirme hatası: {str(e)}'
+        })
+
+@app.route('/set_ai_model', methods=['POST'])
+def set_ai_model():
+    try:
+        data = request.get_json()
+        model_type = data.get('model', '').strip()  # 'gemini' veya 'openai'
+        
+        if not model_type or model_type not in ['gemini', 'openai']:
+            return jsonify({
+                'success': False,
+                'message': 'Geçersiz model tipi'
+            })
+        
+        # Model seçimini güncelle
+        uygulama.selected_ai_model = model_type
+        
+        # Seçilen modelin API key'ini kontrol et
+        if model_type == 'gemini':
+            if not uygulama.gemini_api_key:
+                return jsonify({
+                    'success': False,
+                    'message': 'Gemini API key .env dosyasında bulunamadı'
+                })
+            return jsonify({
+                'success': True,
+                'message': '🤖 Gemini 2.5 Pro aktif! HS kod analizi hazır.'
+            })
+            
+        elif model_type == 'openai':
+            if not uygulama.openai_api_key:
+                return jsonify({
+                    'success': False,
+                    'message': 'OpenAI API key .env dosyasında bulunamadı'
+                })
+            return jsonify({
+                'success': True,
+                'message': '🧠 ChatGPT-4o aktif! HS kod analizi hazır.'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'AI model ayarlama hatası: {str(e)}'
+        })
+
+@app.route('/download')
+def download_results():
+    try:
+        # Eğer orijinal Excel verisi varsa onu indir, yoksa çekilen verileri indir
+        if uygulama.original_df is not None:
+            # Orijinal Excel verisini güncellenmiş haliyle indir
+            timestamp = time.strftime('%Y%m%d_%H%M%S')
+            filename = f'guncellenmis_excel_{timestamp}.xlsx'
+            
+            # Orijinal Excel'i kaydet
+            uygulama.original_df.to_excel(filename, index=False)
+            
+            print(f"Güncellenmiş Excel dosyası oluşturuldu: {filename}")
+            print(f"Toplam satır: {len(uygulama.original_df)}")
+            print(f"Sütunlar: {uygulama.original_df.columns.tolist()}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Güncellenmiş Excel dosyası hazırlandı: {len(uygulama.original_df)} satır',
+                'filename': filename,
+                'count': len(uygulama.original_df),
+                'type': 'updated_excel',
+                'download_url': f'/download_file/{filename}'
+            })
+        elif uygulama.sonuclar:
+            # Sadece çekilen verileri indir
+            df = pd.DataFrame(uygulama.sonuclar)
+            
+            timestamp = time.strftime('%Y%m%d_%H%M%S')
+            filename = f'aliexpress_sonuclar_{timestamp}.xlsx'
+            
+            df.to_excel(filename, index=False)
+            
+            print(f"Sonuç Excel dosyası oluşturuldu: {filename}")
+            print(f"Toplam kayıt: {len(df)}")
+            print(f"Sütunlar: {df.columns.tolist()}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Excel dosyası hazırlandı: {len(uygulama.sonuclar)} kayıt',
+                'filename': filename,
+                'count': len(uygulama.sonuclar),
+                'type': 'results_only',
+                'download_url': f'/download_file/{filename}'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'İndirilecek veri yok'
+            })
+    except Exception as e:
+        print(f"Download error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'İndirme hatası: {str(e)}'
+        })
+
+@app.route('/captcha_status')
+def get_captcha_status():
+    global captcha_waiting, captcha_data
+    
+    if captcha_waiting and captcha_data:
+        return jsonify({
+            'captcha_detected': True,
+            'captcha_type': captcha_data['type'],
+            'screenshot': captcha_data['screenshot'],
+            'url': captcha_data['url'],
+            'title': captcha_data['title'],
+            'timestamp': captcha_data['timestamp']
+        })
+    else:
+        return jsonify({
+            'captcha_detected': False
+        })
+
+@app.route('/captcha_action', methods=['POST'])
+def captcha_action_handler():
+    global captcha_waiting, captcha_action
+    
+    try:
+        data = request.get_json()
+        action = data.get('action', '')  # 'solved' or 'skip'
+        
+        if action in ['solved', 'skip']:
+            captcha_action = action
+            print(f"🌐 Web arayüzünden CAPTCHA aksiyonu: {action}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'CAPTCHA aksiyonu alındı: {action}'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Geçersiz aksiyon'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'CAPTCHA aksiyon hatası: {str(e)}'
+        })
+
+@app.route('/refresh_page', methods=['POST'])
+def refresh_page():
+    """CAPTCHA çözüldükten sonra sayfayı yenile"""
+    try:
+        if hasattr(uygulama, 'driver') and uygulama.driver:
+            uygulama.driver.refresh()
+            time.sleep(3)
+            
+            return jsonify({
+                'success': True,
+                'message': 'Sayfa yenilendi'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Driver bulunamadı'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Sayfa yenileme hatası: {str(e)}'
+        })
+
+@app.route('/download_file/<filename>')
+def download_file(filename):
+    try:
+        import os
+        
+        # Dosya var mı kontrol et
+        if not os.path.exists(filename):
+            return jsonify({
+                'success': False,
+                'message': 'Dosya bulunamadı'
+            }), 404
+        
+        # Dosyayı indir
+        return send_file(
+            filename,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    except Exception as e:
+        print(f"File download error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Dosya indirme hatası: {str(e)}'
+        }), 500
+
+if __name__ == "__main__":
+    import socket
+    
+    # Port seçimi: Railway/Render için PORT env variable, local için boş port
+    port = int(os.environ.get('PORT', 0))
+    
+    if port == 0:
+        # Boş port bul (local development)
+        def find_free_port():
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('', 0))
+                s.listen(1)
+                port = s.getsockname()[1]
+            return port
+        
+        port = find_free_port()
+        print(f"💻 Local development mode")
+    else:
+        print(f"🌍 Production mode (Railway/Render)")
+    
+    print("🌐 AliExpress Veri Çekme Uygulaması başlatılıyor...")
+    print(f"📱 Tarayıcıda: http://localhost:{port}")
+    print("📈 Veri çekme sistemi entegreli canlı arayüz!")
+    print(f"🚀 Port {port} kullanılıyor")
+    
+    app.run(host='0.0.0.0', port=port, debug=False)
+ in text or '₺' in text or 'TL' in text))
+                    for price_text in price_elements:
+                        if any(char.isdigit() for char in price_text):
+                            fiyat = price_text.strip()
+                            break
+                    
+                    # Resim
+                    resim_url = "Resim bulunamadı"
+                    img_tags = soup.find_all('img')
+                    for img in img_tags:
+                        src = img.get('src', '')
+                        if src and ('alicdn' in src or 'aliexpress' in src):
+                            resim_url = src
+                            break
+                    
+                    return {
+                        'success': True,
+                        'data': {
+                            'Ürün Adı': urun_adi,
+                            'Fiyat': fiyat,
+                            'Resim URL': resim_url
+                        }
+                    }
+                else:
+                    print("❌ Scrape.do CAPTCHA geçemedi")
+                    return False
+                    
+            else:
+                print(f"❌ Scrape.do API hatası: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Scrape.do hatası: {e}")
+            return False
+    
     def hybrid_captcha_handler(self):
         """Hybrid CAPTCHA Handler - Railway'de web modal, Local'de visible"""
         

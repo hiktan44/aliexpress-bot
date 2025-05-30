@@ -8,3 +8,4 @@ python-dotenv==1.0.1
 google-generativeai==0.8.2
 openai==1.51.2
 webdriver-manager==4.0.2
+beautifulsoup4==4.12.3

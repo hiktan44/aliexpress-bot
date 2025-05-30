@@ -1,1 +1,1 @@
-web: python3 aliexpress_bot_web_entegre.py
+web: python3 aliexpress_bot_improved_captcha.py

@@ -1,3 +1,33 @@
+from flask import Flask, jsonify
+import os
+from datetime import datetime
+
+app = Flask(__name__)
+PORT = int(os.getenv('PORT', 5000))
+
+@app.route('/')
+def home():
+    return f"""
+    <h1>🤖 AliExpress Bot - Railway</h1>
+    <p>✅ Bot başarıyla deploy edildi!</p>
+    <p>⏰ Zaman: {datetime.now()}</p>
+    <p>🌐 Port: {PORT}</p>
+    <a href="/health">Health Check</a> | 
+    <a href="/status">Bot Status</a>
+    """
+
+@app.route('/health')
+def health():
+    return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()})
+
+@app.route('/status')
+def status():
+    return jsonify({"bot": "active", "railway": "deployed", "timestamp": datetime.now().isoformat()})
+
+if __name__ == '__main__':
+    print(f"🚀 Railway Bot başlatılıyor - Port: {PORT}")
+    app.run(host='0.0.0.0', port=PORT, debug=False)
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """

@@ -610,62 +610,6 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
                 except Exception as e:
                     print(f"❌ CAPTCHA screenshot hatası: {e}")
                     return "skip"
-            
-            else:
-                # Local development - visible mode dene
-                print("💻 LOCAL MODE: Visible Chrome deneniyor...")
-                
-                try:
-                    current_url = self.driver.current_url
-                    self.driver.quit()
-                    time.sleep(2)
-                    
-                    # Local'de visible mode
-                    self.driver = self.setup_chrome_driver_hybrid(visible_mode=True)
-                    self.driver.get(current_url)
-                    time.sleep(3)
-                    
-                    print("👁️ CAPTCHA manuel çözme modu!")
-                    print("🖥️ Chrome penceresinde CAPTCHA'ı çözün...")
-                    
-                    max_wait = 300
-                    waited = 0
-                    
-                    while waited < max_wait:
-                        time.sleep(5)
-                        waited += 5
-                        
-                        try:
-                            page_title = self.driver.title
-                            if page_title and 'captcha' not in page_title.lower():
-                                h1_elements = self.driver.find_elements(By.TAG_NAME, "h1")
-                                if h1_elements and h1_elements[0].text.strip():
-                                    print("✅ CAPTCHA çözüldü!")
-                                    return True
-                            
-                            # CAPTCHA hala var mı
-                            still_captcha = False
-                            for selector in captcha_selectors:
-                                if self.driver.find_elements(By.CSS_SELECTOR, selector):
-                                    still_captcha = True
-                                    break
-                            
-                            if not still_captcha:
-                                print("✅ CAPTCHA kayboldu!")
-                                return True
-                                
-                        except:
-                            pass
-                        
-                        if waited % 30 == 0:
-                            remaining = max_wait - waited
-                            print(f"⏰ CAPTCHA bekleniyor... {remaining}s")
-                    
-                    return "skip"
-                    
-                except Exception as e:
-                    print(f"❌ Local visible mode hatası: {e}")
-                    return "skip"
         
         return False
     

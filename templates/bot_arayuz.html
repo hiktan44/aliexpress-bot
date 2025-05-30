@@ -442,8 +442,37 @@
                 </div>
             </div>
         </div>
-        
-        <!-- Table -->
+        <!-- CAPTCHA Modal -->
+        <div id="captchaModal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; display: flex; align-items: center; justify-content: center;">
+            <div style="background: white; padding: 40px; border-radius: 20px; width: 90%; max-width: 600px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
+                <div style="font-size: 3rem; margin-bottom: 20px;">🤖</div>
+                <h2 style="color: #ff6b6b; margin-bottom: 20px; font-size: 1.8rem;">CAPTCHA Tespit Edildi!</h2>
+                
+                <div style="background: #fff3cd; border: 2px solid #ffc107; border-radius: 10px; padding: 20px; margin: 20px 0;">
+                    <p style="color: #856404; font-weight: bold; margin-bottom: 15px;">👤 Lütfen CAPTCHA'ı manuel çözün:</p>
+                    <ol style="text-align: left; color: #856404; line-height: 1.6;">
+                        <li>Yeni sekmede AliExpress sayfasını açın</li>
+                        <li>CAPTCHA'yı tamamlayın</li>
+                        <li>Sayfa normal yüklenince aşağıdaki butona tıklayın</li>
+                    </ol>
+                </div>
+                
+                <div style="display: flex; gap: 15px; justify-content: center; margin-top: 30px;">
+                    <button onclick="skipCurrentProduct()" style="padding: 15px 30px; border: 2px solid #dc3545; background: white; color: #dc3545; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 1.1rem;">
+                        ⏭️ Bu Ürünü Atla
+                    </button>
+                    <button onclick="continueCaptcha()" style="padding: 15px 40px; border: none; background: #28a745; color: white; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 1.1rem;">
+                        ✅ CAPTCHA Çözüldü - Devam Et
+                    </button>
+                </div>
+                
+                <div style="margin-top: 20px; padding: 15px; background: #e7f3ff; border-radius: 8px;">
+                    <small style="color: #0066cc;">
+                        📝 <strong>Not:</strong> CAPTCHA çözüldüğünden emin olduktan sonra "Devam Et" butonuna tıklayın.
+                    </small>
+                </div>
+            </div>
+        </div>
         <div class="table-container">
             <h3>📊 Gerçek Zamanlı Sonuçlar</h3>
             <table class="data-table" id="resultsTable">
@@ -607,6 +636,9 @@
             .then(results => {
                 updateResultsTable(results);
             });
+            
+            // CAPTCHA durumu kontrol et
+            checkCaptchaStatus();
         }
 
         function updateResultsTable(results) {
@@ -779,6 +811,73 @@
         function toggleAiModal() {
             const modal = document.getElementById('aiModal');
             modal.classList.toggle('hidden');
+        }
+        
+        // CAPTCHA Modal Functions
+        function showCaptchaModal() {
+            const modal = document.getElementById('captchaModal');
+            modal.classList.remove('hidden');
+        }
+        
+        function hideCaptchaModal() {
+            const modal = document.getElementById('captchaModal');
+            modal.classList.add('hidden');
+        }
+        
+        function continueCaptcha() {
+            // CAPTCHA çözüldü signal'i backend'e gönder
+            fetch('/captcha_solved', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ action: 'continue' })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    hideCaptchaModal();
+                    showAlert('✅ CAPTCHA çözüldü! İşleme devam ediliyor...', 'success');
+                }
+            })
+            .catch(error => {
+                showAlert('❌ CAPTCHA devam hatası: ' + error, 'error');
+            });
+        }
+        
+        function skipCurrentProduct() {
+            // Mevcut ürünü atla signal'i gönder
+            fetch('/captcha_solved', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ action: 'skip' })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    hideCaptchaModal();
+                    showAlert('⏭️ Ürün atlandı, bir sonrakine geçiliyor...', 'info');
+                }
+            })
+            .catch(error => {
+                showAlert('❌ Atlama hatası: ' + error, 'error');
+            });
+        }
+        
+        // CAPTCHA durumu kontrol fonksiyonu
+        function checkCaptchaStatus() {
+            fetch('/captcha_status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.captcha_detected && !document.getElementById('captchaModal').classList.contains('hidden') === false) {
+                    showCaptchaModal();
+                }
+            })
+            .catch(error => {
+                // Sessizce geç
+            });
         }
         
         function saveAiSelection() {

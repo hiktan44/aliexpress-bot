@@ -401,14 +401,54 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
             return False
     
     def captcha_bekle(self):
-        """CAPTCHA manuel çözme"""
+        """CAPTCHA manuel çözme - Web arayüzü ile"""
+        global captcha_waiting, captcha_action
+        
         captcha_selectors = ["iframe[src*='captcha']", ".nc_wrapper", ".geetest"]
         
         for selector in captcha_selectors:
             if self.driver.find_elements(By.CSS_SELECTOR, selector):
                 print("\n🤖 CAPTCHA TESPİT EDİLDİ!")
-                print("👤 Chrome'da CAPTCHA'yı çözün ve ENTER'a basın...")
-                input("✅ CAPTCHA çözüldü mü? ENTER: ")
+                
+                # Production ortamında web arayüzü ile bekleme
+                is_production = os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('RENDER')
+                
+                if is_production:
+                    print("🌐 Production mode: Web arayüzünde CAPTCHA modal'i açılacak...")
+                    
+                    # CAPTCHA durumunu ayarla
+                    captcha_waiting = True
+                    captcha_action = None
+                    
+                    # Web arayüzünden cevap bekle
+                    timeout = 300  # 5 dakika maksimum bekleme
+                    waited = 0
+                    
+                    while captcha_waiting and waited < timeout:
+                        time.sleep(2)
+                        waited += 2
+                        
+                        if captcha_action == 'continue':
+                            print("✅ Kullanıcı CAPTCHA'ı çözdü!")
+                            captcha_waiting = False
+                            captcha_action = None
+                            break
+                        elif captcha_action == 'skip':
+                            print("⏭️ Kullanıcı ürünü atlamayı seçti")
+                            captcha_waiting = False
+                            captcha_action = None
+                            return "skip"
+                    
+                    if waited >= timeout:
+                        print("⏰ CAPTCHA bekleme zaman aşımı, ürün atlanıyor...")
+                        captcha_waiting = False
+                        return "skip"
+                        
+                else:
+                    # Local development - manuel çözme
+                    print("👤 Chrome'da CAPTCHA'yı çözün ve ENTER'a basın...")
+                    input("✅ CAPTCHA çözüldü mü? ENTER: ")
+                
                 self.manuel_captcha += 1
                 self.web_durumu_guncelle()
                 return True
@@ -495,7 +535,18 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
             self.driver.get(link)
             
             # CAPTCHA kontrolü
-            if self.captcha_bekle():
+            captcha_result = self.captcha_bekle()
+            if captcha_result == "skip":
+                print("⏭️ CAPTCHA nedeniyle ürün atlandı")
+                return {
+                    'Link': link,
+                    'Ürün Adı': 'CAPTCHA - Atlandı',
+                    'Fiyat': 'Atlandı',
+                    'Resim URL': 'Atlandı',
+                    'YZ HS Kod': 'Atlandı',
+                    'Durum': 'CAPTCHA Skip'
+                }
+            elif captcha_result:
                 print("✅ CAPTCHA çözüldü")
             
             # Sayfayı tamamen yükle
@@ -609,6 +660,10 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
         finally:
             if self.driver:
                 self.driver.quit()
+
+# Global CAPTCHA state
+captcha_waiting = False
+captcha_action = None
 
 # Global veri çekme uygulaması instance
 uygulama = AliExpressVeriCekmeUygulamasi()
@@ -891,6 +946,39 @@ def download_results():
             'message': f'İndirme hatası: {str(e)}'
         })
 
+@app.route('/captcha_status')
+def get_captcha_status():
+    global captcha_waiting
+    return jsonify({
+        'captcha_detected': captcha_waiting
+    })
+
+@app.route('/captcha_solved', methods=['POST'])
+def captcha_solved():
+    global captcha_waiting, captcha_action
+    
+    try:
+        data = request.get_json()
+        action = data.get('action', '')
+        
+        if action in ['continue', 'skip']:
+            captcha_action = action
+            print(f"🌐 Web arayüzünden CAPTCHA aksiyonu: {action}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'CAPTCHA aksiyonu: {action}'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Geçersiz aksiyon'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'CAPTCHA çözme hatası: {str(e)}'
 @app.route('/download_file/<filename>')
 def download_file(filename):
     try:

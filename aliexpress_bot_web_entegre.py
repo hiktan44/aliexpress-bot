@@ -979,6 +979,8 @@ def captcha_solved():
         return jsonify({
             'success': False,
             'message': f'CAPTCHA çözme hatası: {str(e)}'
+        })
+
 @app.route('/download_file/<filename>')
 def download_file(filename):
     try:

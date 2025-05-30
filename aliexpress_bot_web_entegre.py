@@ -324,14 +324,17 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
                 results = []
             
             # Yeni sonucu ekle
+            status_class = 'success' if sonuc.get('Durum', '') == 'Başarılı' else 'danger'
+            
             results.append({
                 'id': self.current_index,
                 'name': sonuc.get('Ürün Adı', 'N/A')[:80],
                 'price': sonuc.get('Fiyat', 'N/A'),
                 'image': sonuc.get('Resim URL', ''),
-                'link': sonuc.get('Link', ''),  # Gerçek linki kullan
-                'hs_kod': sonuc.get('YZ HS Kod', 'Analiz ediliyor...'),  # HS kodu ekledik
+                'link': sonuc.get('Link', ''),
+                'hs_kod': sonuc.get('YZ HS Kod', 'Analiz ediliyor...'),
                 'status': sonuc.get('Durum', 'Bilinmiyor'),
+                'status_class': status_class,  # CSS class için
                 'time': time.strftime('%H:%M:%S')
             })
             
@@ -507,7 +510,7 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
             return False
     
     def hybrid_captcha_handler(self):
-        """Hybrid CAPTCHA Handler - CAPTCHA varsa visible mode'a geç"""
+        """Hybrid CAPTCHA Handler - Railway'de web modal, Local'de visible"""
         
         # CAPTCHA kontrol selectors
         captcha_selectors = [
@@ -518,7 +521,7 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
             "[id*='captcha']", 
             ".slider-track",
             ".verify-code",
-            "[data-sitekey]",  # reCAPTCHA
+            "[data-sitekey]",
             ".captcha-container"
         ]
         
@@ -535,75 +538,134 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
                 break
         
         if captcha_detected:
-            print("🔄 HYBRID MODE: Headless → Visible geçiş yapılıyor...")
+            # Railway production check
+            is_production = (
+                os.environ.get('RAILWAY_ENVIRONMENT') or 
+                os.environ.get('PORT') or
+                os.path.exists('/app')
+            )
             
-            # Mevcut URL'i kaydet
-            current_url = self.driver.current_url
-            
-            # Headless driver'ı kapat
-            self.driver.quit()
-            time.sleep(2)
-            
-            # Visible mode'da yeni driver başlat
-            try:
-                self.driver = self.setup_chrome_driver_hybrid(visible_mode=True)
-                print("✅ Visible mode driver başlatıldı")
+            if is_production:
+                print("🌐 RAILWAY PRODUCTION: Web Modal CAPTCHA sistemi aktif")
                 
-                # Aynı sayfaya git
-                self.driver.get(current_url)
-                time.sleep(3)
-                
-                print("👁️ CAPTCHA MANUEL ÇÖZME MOD!")
-                print("🖥️ Chrome penceresini görebilirsiniz:")
-                print("   1. CAPTCHA'yı manuel olarak çözün")
-                print("   2. 'Ben robot değilim' işaretleyin") 
-                print("   3. Slider'ı kaydırın")
-                print("   4. Resim seçimi yapın")
-                print("   5. Sayfa yüklenmeyi bekleyin")
-                
-                # Manuel çözme bekleme
-                max_wait = 300  # 5 dakika
-                waited = 0
-                
-                while waited < max_wait:
-                    time.sleep(5)
-                    waited += 5
+                # CAPTCHA screenshot al
+                try:
+                    screenshot_data = self.driver.get_screenshot_as_base64()
+                    page_url = self.driver.current_url
+                    page_title = self.driver.title
                     
-                    try:
-                        # Sayfa title kontrol
-                        page_title = self.driver.title
-                        if page_title and len(page_title) > 10 and 'captcha' not in page_title.lower():
-                            # Ürün bilgisi var mı kontrol
-                            h1_elements = self.driver.find_elements(By.TAG_NAME, "h1")
-                            if h1_elements and h1_elements[0].text.strip():
-                                print("✅ CAPTCHA başarıyla çözüldü! Sayfa yüklendi.")
-                                return True
+                    # CAPTCHA bilgilerini global değişkende sakla
+                    global captcha_waiting, captcha_data
+                    captcha_waiting = True
+                    captcha_data = {
+                        'detected': True,
+                        'type': captcha_type,
+                        'screenshot': screenshot_data,
+                        'url': page_url,
+                        'title': page_title,
+                        'timestamp': time.time()
+                    }
+                    
+                    print("📸 CAPTCHA screenshot alındı")
+                    print("🌐 Web arayüzünde CAPTCHA modal açılacak...")
+                    print("👤 Kullanıcı müdahalesini bekliyorum...")
+                    
+                    # Web modal'dan yanıt bekle
+                    max_wait = 300  # 5 dakika
+                    waited = 0
+                    
+                    while captcha_waiting and waited < max_wait:
+                        time.sleep(3)
+                        waited += 3
                         
-                        # CAPTCHA hala var mı
-                        still_captcha = False
-                        for selector in captcha_selectors:
-                            if self.driver.find_elements(By.CSS_SELECTOR, selector):
-                                still_captcha = True
-                                break
-                        
-                        if not still_captcha:
-                            print("✅ CAPTCHA kayboldu! İşlem devam ediyor.")
+                        # Kullanıcı aksiyonu kontrol et
+                        global captcha_action
+                        if captcha_action == 'solved':
+                            print("✅ Kullanıcı CAPTCHA'ı çözdü!")
+                            captcha_waiting = False
+                            captcha_action = None
+                            captcha_data = None
+                            
+                            # Sayfa yenilenmesini bekle
+                            time.sleep(3)
                             return True
                             
-                    except Exception as e:
-                        print(f"⚠️ CAPTCHA çözme kontrol hatası: {e}")
+                        elif captcha_action == 'skip':
+                            print("⏭️ Kullanıcı ürünü atlamayı seçti")
+                            captcha_waiting = False
+                            captcha_action = None
+                            captcha_data = None
+                            return "skip"
+                        
+                        # Progress göster
+                        if waited % 30 == 0:
+                            remaining = max_wait - waited
+                            print(f"⏰ CAPTCHA çözme bekleniyor... Kalan: {remaining}s")
                     
-                    # Progress indicator
-                    if waited % 30 == 0:
-                        remaining = max_wait - waited
-                        print(f"⏰ CAPTCHA manuel çözme bekleniyor... Kalan: {remaining}s")
+                    print("⏰ CAPTCHA bekleme süresi doldu")
+                    captcha_waiting = False
+                    captcha_data = None
+                    return "skip"
+                    
+                except Exception as e:
+                    print(f"❌ CAPTCHA screenshot hatası: {e}")
+                    return "skip"
+            
+            else:
+                # Local development - visible mode dene
+                print("💻 LOCAL MODE: Visible Chrome deneniyor...")
                 
-                print("⏰ CAPTCHA çözme süresi doldu. Ürün atlanıyor...")
-                return "skip"
-                
-            except Exception as e:
-                print(f"❌ Visible mode geçiş hatası: {e}")
-                return "skip"
+                try:
+                    current_url = self.driver.current_url
+                    self.driver.quit()
+                    time.sleep(2)
+                    
+                    # Local'de visible mode
+                    self.driver = self.setup_chrome_driver_hybrid(visible_mode=True)
+                    self.driver.get(current_url)
+                    time.sleep(3)
+                    
+                    print("👁️ CAPTCHA manuel çözme modu!")
+                    print("🖥️ Chrome penceresinde CAPTCHA'ı çözün...")
+                    
+                    max_wait = 300
+                    waited = 0
+                    
+                    while waited < max_wait:
+                        time.sleep(5)
+                        waited += 5
+                        
+                        try:
+                            page_title = self.driver.title
+                            if page_title and 'captcha' not in page_title.lower():
+                                h1_elements = self.driver.find_elements(By.TAG_NAME, "h1")
+                                if h1_elements and h1_elements[0].text.strip():
+                                    print("✅ CAPTCHA çözüldü!")
+                                    return True
+                            
+                            # CAPTCHA hala var mı
+                            still_captcha = False
+                            for selector in captcha_selectors:
+                                if self.driver.find_elements(By.CSS_SELECTOR, selector):
+                                    still_captcha = True
+                                    break
+                            
+                            if not still_captcha:
+                                print("✅ CAPTCHA kayboldu!")
+                                return True
+                                
+                        except:
+                            pass
+                        
+                        if waited % 30 == 0:
+                            remaining = max_wait - waited
+                            print(f"⏰ CAPTCHA bekleniyor... {remaining}s")
+                    
+                    return "skip"
+                    
+                except Exception as e:
+                    print(f"❌ Local visible mode hatası: {e}")
+                    return "skip"
         
         return False
     
@@ -726,6 +788,25 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
             fiyat = self.tum_fiyatlari_bul()
             resim_url = self.tum_resimleri_bul()
             
+            # Başarı kontrolü - Bilgi bulunamadıysa BAŞARISIZ
+            is_successful = (
+                urun_adi != "Bilgi bulunamadı" and 
+                fiyat != "Fiyat bulunamadı" and 
+                len(urun_adi) > 10
+            )
+            
+            if not is_successful:
+                print("❌ Yeterli ürün bilgisi bulunamadı - BAŞARISIZ")
+                print(f"❌ BAŞARISIZ: Yetersiz veri - {urun_adi[:30]}...")
+                return {
+                    'Link': link,
+                    'Ürün Adı': urun_adi,
+                    'Fiyat': fiyat,
+                    'Resim URL': resim_url,
+                    'YZ HS Kod': 'Veri yetersiz',
+                    'Durum': 'Başarısız - Bilgi eksik'
+                }
+            
             # HS Kodu AI ile tespit et
             hs_kod = "API Key gerekli"
             if self.gemini_api_key or self.openai_api_key:
@@ -733,18 +814,24 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
             
             # Sonuç
             sonuc = {
-                'Link': link,  # Gerçek linki kaydet
+                'Link': link,
                 'Ürün Adı': urun_adi,
                 'Fiyat': fiyat,
                 'Resim URL': resim_url,
-                'YZ HS Kod': hs_kod,  # HS kodu ekledik
+                'YZ HS Kod': hs_kod,
                 'Durum': 'Başarılı'
             }
             
-            print(f"✅ Ürün: {urun_adi[:40]}...")
+            print(f"\u2705 Ürün: {urun_adi[:40]}...")
             print(f"💰 Fiyat: {fiyat}")
             print(f"🖼️ Resim: {'✅' if resim_url != 'Resim bulunamadı' else '❌'}")
             print(f"🧠 HS Kod: {hs_kod}")
+            
+            # Sonuç logunu yazdır
+            if is_successful:
+                print(f"✅ BAŞARILI: {urun_adi[:40]}...")
+            else:
+                print(f"❌ BAŞARISIZ: Yetersiz veri - {urun_adi[:20]}...")
             
             return sonuc
             
@@ -777,14 +864,26 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
                 # Ürün bilgilerini çek
                 sonuc = self.ultra_guclu_veri_cek(link)
                 
+                # Başarı durumunu kontrol et
                 if sonuc and sonuc['Durum'] == 'Başarılı':
                     self.sonuclar.append(sonuc)
                     self.basarili += 1
                     
                     # Orijinal Excel'i güncelle
                     self.excel_verisini_guncelle(i, sonuc)
+                    
+                    print(f"✅ BAŞARILI: {sonuc['Ürün Adı'][:30]}...")
+                    
+                elif sonuc and 'Başarısız' in sonuc['Durum']:
+                    self.sonuclar.append(sonuc)  # Başarısız sonucu da kaydet
+                    self.basarisiz += 1
+                    
+                    print(f"❌ BAŞARISIZ: {sonuc['Durum']}")
+                    
                 else:
                     self.basarisiz += 1
+                    
+                    print(f"❌ HATA: {sonuc.get('Durum', 'Bilinmeyen hata') if sonuc else 'Sonuç alınamadı'}")
                 
                 # Web arayüzüne gönder
                 self.web_sonuc_ekle(sonuc)
@@ -818,6 +917,7 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
 # Global CAPTCHA state
 captcha_waiting = False
 captcha_action = None
+captcha_data = None
 
 # Global veri çekme uygulaması instance
 uygulama = AliExpressVeriCekmeUygulamasi()
@@ -1102,26 +1202,37 @@ def download_results():
 
 @app.route('/captcha_status')
 def get_captcha_status():
-    global captcha_waiting
-    return jsonify({
-        'captcha_detected': captcha_waiting
-    })
+    global captcha_waiting, captcha_data
+    
+    if captcha_waiting and captcha_data:
+        return jsonify({
+            'captcha_detected': True,
+            'captcha_type': captcha_data['type'],
+            'screenshot': captcha_data['screenshot'],
+            'url': captcha_data['url'],
+            'title': captcha_data['title'],
+            'timestamp': captcha_data['timestamp']
+        })
+    else:
+        return jsonify({
+            'captcha_detected': False
+        })
 
-@app.route('/captcha_solved', methods=['POST'])
-def captcha_solved():
+@app.route('/captcha_action', methods=['POST'])
+def captcha_action_handler():
     global captcha_waiting, captcha_action
     
     try:
         data = request.get_json()
-        action = data.get('action', '')
+        action = data.get('action', '')  # 'solved' or 'skip'
         
-        if action in ['continue', 'skip']:
+        if action in ['solved', 'skip']:
             captcha_action = action
             print(f"🌐 Web arayüzünden CAPTCHA aksiyonu: {action}")
             
             return jsonify({
                 'success': True,
-                'message': f'CAPTCHA aksiyonu: {action}'
+                'message': f'CAPTCHA aksiyonu alındı: {action}'
             })
         else:
             return jsonify({
@@ -1132,7 +1243,31 @@ def captcha_solved():
     except Exception as e:
         return jsonify({
             'success': False,
-            'message': f'CAPTCHA çözme hatası: {str(e)}'
+            'message': f'CAPTCHA aksiyon hatası: {str(e)}'
+        })
+
+@app.route('/refresh_page', methods=['POST'])
+def refresh_page():
+    """CAPTCHA çözüldükten sonra sayfayı yenile"""
+    try:
+        if hasattr(uygulama, 'driver') and uygulama.driver:
+            uygulama.driver.refresh()
+            time.sleep(3)
+            
+            return jsonify({
+                'success': True,
+                'message': 'Sayfa yenilendi'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Driver bulunamadı'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Sayfa yenileme hatası: {str(e)}'
         })
 
 @app.route('/download_file/<filename>')

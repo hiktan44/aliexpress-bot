@@ -358,31 +358,39 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
                 chrome_options.add_argument('--disable-extensions')
                 chrome_options.add_argument('--disable-plugins')
                 chrome_options.add_argument('--disable-images')
+                chrome_options.add_argument('--single-process')
+                chrome_options.add_argument('--disable-background-timer-throttling')
+                chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+                chrome_options.add_argument('--disable-renderer-backgrounding')
                 
                 # Chrome binary path for Railway/Render
                 chrome_bin = os.environ.get('CHROME_BIN', '/usr/bin/chromium')
                 chrome_options.binary_location = chrome_bin
                 
-                # ChromeDriver path
-                driver_path = os.environ.get('CHROMEDRIVER_PATH', '/usr/bin/chromedriver')
-                
                 print(f"🐧 Production mode: Chrome binary = {chrome_bin}")
-                print(f"🐧 Production mode: ChromeDriver = {driver_path}")
                 
-                service = Service(driver_path)
+                # WebDriverManager kullan
+                try:
+                    from webdriver_manager.chrome import ChromeDriverManager
+                    service = Service(ChromeDriverManager().install())
+                    print(f"🐧 WebDriverManager: ChromeDriver otomatik kuruldu")
+                except:
+                    # Fallback to system chromedriver
+                    driver_path = os.environ.get('CHROMEDRIVER_PATH', '/usr/bin/chromedriver')
+                    service = Service(driver_path)
+                    print(f"🐧 Fallback: ChromeDriver = {driver_path}")
+                
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
             else:
                 # Local development
-                driver_path = "/opt/homebrew/bin/chromedriver"
-                if not os.path.exists(driver_path):
-                    driver_path = "/usr/local/bin/chromedriver"
+                from webdriver_manager.chrome import ChromeDriverManager
                 
                 chrome_options = Options()
                 chrome_options.add_argument("--no-sandbox")
                 chrome_options.add_argument("--disable-dev-shm-usage")
                 chrome_options.add_argument("--window-size=1200,800")
                 
-                service = Service(driver_path)
+                service = Service(ChromeDriverManager().install())
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
             
             print("✅ Chrome browser başlatıldı")

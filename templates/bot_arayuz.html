@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📈 AliExpress Veri Çekme Uygulaması</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            padding: 30px;
+            background: #f8f9fa;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .success { color: #28a745; }
+        .warning { color: #ffc107; }
+        .danger { color: #dc3545; }
+        .info { color: #17a2b8; }
+
+        .controls {
+            padding: 30px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            background: #f8f9fa;
+        }
+
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, #007bff, #0056b3);
+            color: white;
+        }
+
+        .btn-success {
+            background: linear-gradient(45deg, #28a745, #1e7e34);
+            color: white;
+        }
+
+        .btn-danger {
+            background: linear-gradient(45deg, #dc3545, #c82333);
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .progress-container {
+            padding: 0 30px 30px;
+        }
+
+        .progress {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(45deg, #28a745, #20c997);
+            width: 0%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+
+        .table-container {
+            padding: 30px;
+            overflow-x: auto;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .data-table th {
+            background: linear-gradient(45deg, #495057, #6c757d);
+            color: white;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+        }
+
+        .data-table tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        .status-badge {
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .product-image {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 30px;
+            transition: all 0.3s ease;
+        }
+
+        .upload-area:hover {
+            border-color: #007bff;
+            background: rgba(0, 123, 255, 0.05);
+        }
+
+        .upload-area.dragover {
+            border-color: #28a745;
+            background: rgba(40, 167, 69, 0.1);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .alert {
+            padding: 15px;
+            margin: 20px 30px;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        @media (max-width: 768px) {
+            .stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>📈 AliExpress Veri Çekme</h1>
+            <p>Ultra Güçlü Veri Çekme Sistemi - Canlı Arayüz</p>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value success" id="successCount">0</div>
+                <div class="stat-label">Başarılı Ürün</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value danger" id="failCount">0</div>
+                <div class="stat-label">Başarısız Ürün</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value warning" id="captchaCount">0</div>
+                <div class="stat-label">CAPTCHA Çözülen</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value info" id="totalCount">0</div>
+                <div class="stat-label">Toplam İşlenen</div>
+            </div>
+        </div>
+
+        <!-- Progress -->
+        <div class="progress-container">
+            <div class="progress">
+                <div class="progress-bar" id="progressBar">%0</div>
+            </div>
+            <div style="text-align: center; margin-top: 10px;">
+                <span id="progressText">Dosya yükleyin ve bot'u başlatın</span>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <input type="file" id="fileInput" accept=".xlsx,.xls" style="display: none;">
+            <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                📁 Excel Dosyası Yükle
+            </button>
+            <button class="btn btn-success" id="startBtn" onclick="startProcess()" disabled>
+                🚀 İşlemi Başlat
+            </button>
+            <button class="btn btn-danger" id="stopBtn" onclick="stopProcess()" disabled>
+                ⏹️ İşlemi Durdur
+            </button>
+            <button class="btn btn-primary" id="downloadBtn" onclick="downloadResults()" disabled>
+                📥 Sonuçları İndir
+            </button>
+            <button class="btn btn-primary" onclick="toggleAiModal()">
+                🤖 AI Model (🤖 Gemini)
+            </button>
+        </div>
+
+        <!-- Alerts -->
+        <div id="alertContainer"></div>
+
+        <!-- AI Model Modal -->
+        <div id="aiModal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;">
+            <div style="background: white; padding: 30px; border-radius: 15px; width: 90%; max-width: 500px;">
+                <h3 style="margin-bottom: 20px; color: #333;">🤖 AI Model Seçimi</h3>
+                
+                <!-- Model Seçimi -->
+                <div style="margin-bottom: 25px;">
+                    <label style="display: block; margin-bottom: 15px; font-weight: bold; color: #666;">HS Kod Analizi için AI Model Seçin:</label>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 15px;">
+                        <label style="display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 15px; border: 2px solid #4285f4; border-radius: 10px; background: #f8f9ff;">
+                            <input type="radio" name="aiModel" value="gemini" checked style="transform: scale(1.2);">
+                            <div>
+                                <div style="font-weight: bold; color: #4285f4;">🤖 Google Gemini 2.5 Pro</div>
+                                <small style="color: #666;">Hızlı, Güçlü, Ücretsiz - Tavsiye Edilen!</small>
+                            </div>
+                        </label>
+                        
+                        <label style="display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 15px; border: 2px solid #10a37f; border-radius: 10px; background: #f0fdf4;">
+                            <input type="radio" name="aiModel" value="openai" style="transform: scale(1.2);">
+                            <div>
+                                <div style="font-weight: bold; color: #10a37f;">🧠 ChatGPT-4o</div>
+                                <small style="color: #666;">Sehr Güçlü, Ücretli, Premium Kalite</small>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button onclick="toggleAiModal()" style="padding: 12px 24px; border: 1px solid #ddd; background: white; border-radius: 8px; cursor: pointer; font-weight: bold;">
+                        İptal
+                    </button>
+                    <button onclick="saveAiSelection()" style="padding: 12px 24px; border: none; background: #007bff; color: white; border-radius: 8px; cursor: pointer; font-weight: bold;">
+                        ✅ Seçimi Kaydet
+                    </button>
+                </div>
+                
+                <div id="aiStatus" style="margin-top: 15px; padding: 10px; border-radius: 5px; text-align: center; display: none;"></div>
+            </div>
+        </div>
+        <div class="upload-area" id="uploadArea">
+            <h3>📁 Excel Dosyası Yükleyin</h3>
+            <p>AliExpress ürün linklerini içeren Excel dosyasını sürükleyip bırakın</p>
+            <small>Desteklenen formatlar: .xlsx, .xls</small>
+        </div>
+        
+        <!-- Column Mapping Modal -->
+        <div id="columnModal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;">
+            <div style="background: white; padding: 30px; border-radius: 15px; width: 90%; max-width: 700px; max-height: 80vh; overflow-y: auto;">
+                <h3 style="margin-bottom: 20px; color: #333;">📊 Sütun Eşleştirme</h3>
+                
+                <p style="margin-bottom: 20px; color: #666;">Excel dosyanızdaki sütunları seçin. Çekilen veriler <strong>seçtiğiniz sütunun yanına YENİ sütun</strong> olarak eklenecek:</p>
+                
+                <div style="display: grid; gap: 20px;">
+                    <!-- Ürün Adı -->
+                    <div style="display: flex; align-items: center; gap: 15px; padding: 15px; border: 2px solid #e3f2fd; border-radius: 10px; background: #f8f9ff;">
+                        <div style="min-width: 180px; font-weight: bold; color: #1976d2;">
+                            🏷️ Ürün Adı için:
+                        </div>
+                        <select id="urunAdiColumn" style="flex: 1; padding: 10px; border: 2px solid #ddd; border-radius: 5px;">
+                            <option value="">-- Karşılaştırmak istediğiniz sütunu seçin --</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Fiyat -->
+                    <div style="display: flex; align-items: center; gap: 15px; padding: 15px; border: 2px solid #e8f5e8; border-radius: 10px; background: #f0fdf4;">
+                        <div style="min-width: 180px; font-weight: bold; color: #388e3c;">
+                            💰 Fiyat için:
+                        </div>
+                        <select id="fiyatColumn" style="flex: 1; padding: 10px; border: 2px solid #ddd; border-radius: 5px;">
+                            <option value="">-- Karşılaştırmak istediğiniz sütunu seçin --</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Resim URL -->
+                    <div style="display: flex; align-items: center; gap: 15px; padding: 15px; border: 2px solid #fff3e0; border-radius: 10px; background: #fffef7;">
+                        <div style="min-width: 180px; font-weight: bold; color: #f57c00;">
+                            🖼️ Resim URL için:
+                        </div>
+                        <select id="resimColumn" style="flex: 1; padding: 10px; border: 2px solid #ddd; border-radius: 5px;">
+                            <option value="">-- Karşılaştırmak istediğiniz sütunu seçin --</option>
+                        </select>
+                    </div>
+                    
+                    <!-- HS Kod -->
+                    <div style="display: flex; align-items: center; gap: 15px; padding: 15px; border: 2px solid #fce4ec; border-radius: 10px; background: #fdf2f8;">
+                        <div style="min-width: 180px; font-weight: bold; color: #c2185b;">
+                            🧠 HS Kod için:
+                        </div>
+                        <select id="hsKodColumn" style="flex: 1; padding: 10px; border: 2px solid #ddd; border-radius: 5px;">
+                            <option value="">-- Karşılaştırmak istediğiniz sütunu seçin --</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 25px; display: flex; gap: 10px; justify-content: flex-end;">
+                    <button onclick="toggleColumnModal()" style="padding: 12px 24px; border: 1px solid #ddd; background: white; border-radius: 8px; cursor: pointer; font-weight: bold;">
+                        İptal
+                    </button>
+                    <button onclick="saveColumnMapping()" style="padding: 12px 24px; border: none; background: #28a745; color: white; border-radius: 8px; cursor: pointer; font-weight: bold;">
+                        ✅ Eşleştirmeyi Kaydet
+                    </button>
+                </div>
+                
+                <div style="margin-top: 15px; padding: 15px; background: #e7f3ff; border-radius: 8px; border-left: 4px solid #2196f3;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                        📝 <strong style="color: #1976d2;">Yeni Sütun Sistemi:</strong>
+                    </div>
+                    <div style="color: #0066cc; font-size: 0.9rem; line-height: 1.4;">
+                        • <strong>Orijinal verileriniz korunur!</strong><br>
+                        • Seçtiğiniz sütunun <strong>hemen yanına</strong> "_Çekilen" eki ile yeni sütun açılır<br>
+                        • Örnek: "Fiyat" sütunu seçerseniz → "Fiyat" | "Fiyat_Çekilen" yan yana<br>
+                        • Böylece orijinal ile çekilen veriyi kolayca karşılaştırabilirsiniz!
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Table -->
+        <div class="table-container">
+            <h3>📊 Gerçek Zamanlı Sonuçlar</h3>
+            <table class="data-table" id="resultsTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Ürün Resmi</th>
+                        <th>Ürün Adı</th>
+                        <th>Fiyat</th>
+                        <th>YZ HS Kod</th>
+                        <th>Link</th>
+                        <th>Durum</th>
+                        <th>Zaman</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody">
+                    <!-- Gerçek sonuçlar buraya dinamik olarak eklenecek -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let excelColumns = [];  // Excel sütun başlıkları
+        let updateInterval;
+        let isRunning = false;
+
+        // File upload handling
+        const fileInput = document.getElementById('fileInput');
+        const uploadArea = document.getElementById('uploadArea');
+        const startBtn = document.getElementById('startBtn');
+
+        fileInput.addEventListener('change', handleFileSelect);
+        uploadArea.addEventListener('click', () => fileInput.click());
+        uploadArea.addEventListener('dragover', handleDragOver);
+        uploadArea.addEventListener('drop', handleDrop);
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                uploadFile(file);
+            }
+        }
+
+        function handleDragOver(event) {
+            event.preventDefault();
+            uploadArea.classList.add('dragover');
+        }
+
+        function handleDrop(event) {
+            event.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const file = event.dataTransfer.files[0];
+            if (file) {
+                uploadFile(file);
+            }
+        }
+
+        function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            showAlert('📁 Excel dosyası yükleniyor...', 'info');
+            
+            console.log('Dosya yükleniyor:', file.name);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Response data:', data);
+                if (data.success) {
+                    showAlert(`✅ ${data.count} ürün linki başarıyla yüklendi!`, 'success');
+                    
+                    // Excel sütunlarını sakla
+                    excelColumns = data.columns || [];
+                    
+                    // Sütun eşleştirme modalını aç
+                    populateColumnSelects();
+                    toggleColumnModal();
+                    
+                    uploadArea.classList.add('hidden');
+                } else {
+                    showAlert(`❌ Hata: ${data.message}`, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Upload error:', error);
+                showAlert(`❌ Yükleme hatası: ${error}`, 'error');
+            });
+        }
+
+        function startProcess() {
+            fetch('/start', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    isRunning = true;
+                    startBtn.disabled = true;
+                    document.getElementById('stopBtn').disabled = false;
+                    showAlert('🚀 Veri çekme işlemi başlatıldı! Chrome penceresini kontrol edin', 'success');
+                    
+                    // Start real-time updates
+                    updateInterval = setInterval(updateStatus, 2000);
+                } else {
+                    showAlert(`❌ ${data.message}`, 'error');
+                }
+            })
+            .catch(error => {
+                showAlert(`❌ Başlatma hatası: ${error}`, 'error');
+            });
+        }
+
+        function stopProcess() {
+            fetch('/stop', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                isRunning = false;
+                startBtn.disabled = false;
+                document.getElementById('stopBtn').disabled = true;
+                showAlert('⏹️ İşlem durduruldu', 'info');
+                
+                if (updateInterval) {
+                    clearInterval(updateInterval);
+                }
+            });
+        }
+
+        function updateStatus() {
+            // Get status
+            fetch('/status')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('successCount').textContent = data.basarili || 0;
+                document.getElementById('failCount').textContent = data.basarisiz || 0;
+                document.getElementById('captchaCount').textContent = data.captcha || 0;
+                document.getElementById('totalCount').textContent = data.current_index || 0;
+                
+                updateProgress(data.progress || 0);
+                
+                if (data.is_running) {
+                    updateProgressText(`İşleniyor: ${data.current_index || 0}/${data.total_links || 0} (%${(data.progress || 0).toFixed(1)})`);
+                } else if (data.current_index > 0) {
+                    updateProgressText(`✅ Tamamlandı: ${data.current_index}/${data.total_links} ürün işlendi`);
+                    document.getElementById('downloadBtn').disabled = false;
+                    
+                    if (updateInterval) {
+                        clearInterval(updateInterval);
+                    }
+                }
+            });
+
+            // Get results
+            fetch('/results')
+            .then(response => response.json())
+            .then(results => {
+                updateResultsTable(results);
+            });
+        }
+
+        function updateResultsTable(results) {
+            const tbody = document.getElementById('resultsBody');
+            
+            // Clear existing rows
+            tbody.innerHTML = '';
+            
+            // Add new rows
+            results.forEach(result => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${result.id}</td>
+                    <td>
+                        ${result.image && result.image !== 'Resim bulunamadı' && result.image !== 'Hata' ? 
+                            `<img src="${result.image}" alt="Ürün" class="product-image" onerror="this.style.display='none'; this.parentNode.innerHTML='-'">` : 
+                            (result.image && result.image.startsWith('http') ? 
+                                `<a href="${result.image}" target="_blank" style="color: #007bff; text-decoration: none;">🖼️ Resim</a>` : 
+                                '-')}
+                    </td>
+                    <td title="${result.name}">${result.name.length > 50 ? result.name.substring(0, 50) + '...' : result.name}</td>
+                    <td><strong>${result.price}</strong></td>
+                    <td>
+                        <span style="font-family: monospace; background: #f0f0f0; padding: 3px 6px; border-radius: 4px; font-size: 0.85rem;">
+                            ${result.hs_kod || 'Analiz ediliyor...'}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="${result.link}" target="_blank" title="${result.link}">
+                            🔗 Aç
+                        </a>
+                        <br>
+                        <small style="color: #666; font-size: 0.7rem;">
+                            ${result.link.includes('aliexpress.com') ? 'AliExpress' : 'Link'}
+                        </small>
+                    </td>
+                    <td>
+                        <span class="status-badge ${result.status === 'Başarılı' ? 'status-success' : 'status-error'}">
+                            ${result.status}
+                        </span>
+                    </td>
+                    <td>${result.time}</td>
+                `;
+                tbody.appendChild(row);
+            });
+            
+            // Scroll to bottom if new results
+            if (results.length > 0) {
+                tbody.lastElementChild.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        function updateProgress(percentage) {
+            const progressBar = document.getElementById('progressBar');
+            progressBar.style.width = percentage + '%';
+            progressBar.textContent = '%' + percentage.toFixed(1);
+        }
+
+        function updateProgressText(text) {
+            document.getElementById('progressText').textContent = text;
+        }
+
+        function showAlert(message, type) {
+            const alertContainer = document.getElementById('alertContainer');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type === 'success' ? 'success' : 'error'}`;
+            alert.textContent = message;
+            
+            alertContainer.appendChild(alert);
+            
+            // Remove after 5 seconds
+            setTimeout(() => {
+                if (alert.parentNode) {
+                    alert.parentNode.removeChild(alert);
+                }
+            }, 5000);
+        }
+
+        function downloadResults() {
+            fetch('/download')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    let message = '';
+                    if (data.type === 'updated_excel') {
+                        message = `📥 Güncellenmiş Excel dosyası hazırlandı: ${data.count} satır`;
+                    } else {
+                        message = `📥 ${data.count} kayıt Excel formatında hazırlandı`;
+                    }
+                    showAlert(message, 'success');
+                    
+                    // Dosyayı otomatik indir
+                    if (data.download_url) {
+                        console.log('Dosya indiriliyor:', data.filename);
+                        
+                        // Dosya indirmek için gizli link oluştur
+                        const downloadLink = document.createElement('a');
+                        downloadLink.href = data.download_url;
+                        downloadLink.download = data.filename;
+                        downloadLink.style.display = 'none';
+                        document.body.appendChild(downloadLink);
+                        downloadLink.click();
+                        document.body.removeChild(downloadLink);
+                    }
+                } else {
+                    showAlert(`❌ ${data.message}`, 'error');
+                }
+            })
+            .catch(error => {
+                showAlert(`❌ İndirme hatası: ${error}`, 'error');
+            });
+        }
+
+        function toggleColumnModal() {
+            const modal = document.getElementById('columnModal');
+            modal.classList.toggle('hidden');
+        }
+        
+        function populateColumnSelects() {
+            const selects = ['urunAdiColumn', 'fiyatColumn', 'resimColumn', 'hsKodColumn'];
+            
+            selects.forEach(selectId => {
+                const select = document.getElementById(selectId);
+                // Mevcut seçenekleri temizle
+                select.innerHTML = '<option value="">-- Seçiniz --</option>';
+                
+                // Excel sütunlarını ekle
+                excelColumns.forEach(column => {
+                    const option = document.createElement('option');
+                    option.value = column;
+                    option.textContent = column;
+                    select.appendChild(option);
+                });
+            });
+        }
+        
+        function saveColumnMapping() {
+            const mapping = {
+                urun_adi: document.getElementById('urunAdiColumn').value,
+                fiyat: document.getElementById('fiyatColumn').value,
+                resim_url: document.getElementById('resimColumn').value,
+                hs_kod: document.getElementById('hsKodColumn').value
+            };
+            
+            fetch('/set_column_mapping', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ mapping: mapping })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert('✅ Sütun eşleştirmesi kaydedildi!', 'success');
+                    toggleColumnModal();
+                    
+                    // İşlemi başlatma butonunu aktif et
+                    startBtn.disabled = false;
+                    updateProgressText(`${excelColumns.length} ürün hazır - İşlemi başlatabilirsiniz`);
+                } else {
+                    showAlert(`❌ ${data.message}`, 'error');
+                }
+            })
+            .catch(error => {
+                showAlert(`❌ Eşleştirme hatası: ${error}`, 'error');
+            });
+        }
+        
+        function toggleAiModal() {
+            const modal = document.getElementById('aiModal');
+            modal.classList.toggle('hidden');
+        }
+        
+        function saveAiSelection() {
+            const selectedModel = document.querySelector('input[name="aiModel"]:checked').value;
+            
+            fetch('/set_ai_model', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    model: selectedModel
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const statusDiv = document.getElementById('aiStatus');
+                statusDiv.style.display = 'block';
+                
+                if (data.success) {
+                    statusDiv.style.background = '#d4edda';
+                    statusDiv.style.color = '#155724';
+                    statusDiv.textContent = `✅ ${data.message}`;
+                    
+                    // Buton metnini güncelle
+                    const aiButton = document.querySelector('button[onclick="toggleAiModal()"]');
+                    if (selectedModel === 'gemini') {
+                        aiButton.innerHTML = '🤖 AI Model (🤖 Gemini)';
+                    } else {
+                        aiButton.innerHTML = '🤖 AI Model (🧠 ChatGPT)';
+                    }
+                    
+                    setTimeout(() => {
+                        toggleAiModal();
+                        showAlert(data.message, 'success');
+                    }, 1500);
+                } else {
+                    statusDiv.style.background = '#f8d7da';
+                    statusDiv.style.color = '#721c24';
+                    statusDiv.textContent = `❌ ${data.message}`;
+                }
+            })
+            .catch(error => {
+                const statusDiv = document.getElementById('aiStatus');
+                statusDiv.style.display = 'block';
+                statusDiv.style.background = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+                statusDiv.textContent = `❌ Hata: ${error}`;
+            });
+        }
+        console.log('🤖 AliExpress Bot Gerçek Canlı Arayüz başlatıldı');
+    </script>
+</body>
+</html>

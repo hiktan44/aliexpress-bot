@@ -1,8 +1,32 @@
+# Railway Chrome Driver Final Fix - nixpacks.toml
+
 [phases.setup]
-aptPackages = ["chromium", "chromium-driver", "xvfb"]
+nixPkgs = [
+    "chromium",
+    "chromedriver",
+    "python311",
+    "python311Packages.pip"
+]
+
+[phases.install]
+cmds = [
+    "pip install -r requirements.txt"
+]
 
 [phases.build]
-cmds = ["pip install -r requirements.txt"]
+cmds = [
+    "echo 'Chrome setup starting...'",
+    "which chromium || echo 'Chromium not found'",
+    "which chromedriver || echo 'ChromeDriver not found'",
+    "ls -la /nix/store/*/bin/chrome* || echo 'No chrome binaries'",
+    "chmod +x /nix/store/*/bin/chromedriver 2>/dev/null || echo 'ChromeDriver chmod failed'",
+    "mkdir -p /usr/local/bin",
+    "ln -sf /nix/store/*/bin/chromedriver /usr/local/bin/chromedriver 2>/dev/null || echo 'Symlink failed'"
+]
 
 [start]
-cmd = "python3 aliexpress_bot_web_entegre.py"
+cmd = "python aliexpress_bot_web_entegre.py"
+
+[variables]
+CHROME_BIN = "/nix/store/*/bin/chromium"
+CHROMEDRIVER_PATH = "/usr/local/bin/chromedriver"

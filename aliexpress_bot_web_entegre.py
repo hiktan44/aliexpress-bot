@@ -10,6 +10,9 @@ import time
 import random
 import os
 import json
+import subprocess
+import glob
+import stat
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -339,61 +342,168 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
         except Exception as e:
             print(f"Web sonuç ekleme hatası: {e}")
     
-    def browser_baslat(self):
-        """Chrome browser başlat"""
-        try:
-            # Production environment check
-            is_production = os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('RENDER') or os.environ.get('PORT')
+    def setup_chrome_driver_railway(self):
+        """Railway için Chrome driver kurulumu - Ultimate fix"""
+        
+        chrome_options = Options()
+        
+        # Production environment check
+        is_production = (
+            os.environ.get('RAILWAY_ENVIRONMENT') == 'production' or 
+            'railway' in os.environ.get('RAILWAY_PROJECT_NAME', '').lower() or
+            os.path.exists('/app')  # Railway container indicator
+        )
+        
+        if is_production:
+            print("🐧 Railway Production Mode - Ultimate Chrome Setup")
             
-            if is_production:
-                # Cloud deployment Chrome options
-                chrome_options = Options()
-                chrome_options.add_argument('--headless=new')
-                chrome_options.add_argument('--no-sandbox')
-                chrome_options.add_argument('--disable-dev-shm-usage')
-                chrome_options.add_argument('--disable-gpu')
-                chrome_options.add_argument('--disable-web-security')
-                chrome_options.add_argument('--disable-features=VizDisplayCompositor')
-                chrome_options.add_argument('--window-size=1920,1080')
-                chrome_options.add_argument('--disable-extensions')
-                chrome_options.add_argument('--disable-plugins')
-                chrome_options.add_argument('--disable-images')
-                chrome_options.add_argument('--single-process')
-                chrome_options.add_argument('--disable-background-timer-throttling')
-                chrome_options.add_argument('--disable-backgrounding-occluded-windows')
-                chrome_options.add_argument('--disable-renderer-backgrounding')
+            # Chrome binary paths to try
+            chrome_paths = [
+                '/usr/bin/chromium',
+                '/usr/bin/chromium-browser',
+                '/usr/bin/google-chrome',
+                '/usr/bin/google-chrome-stable'
+            ]
+            
+            # Find Chrome using nix store
+            nix_chrome_paths = glob.glob('/nix/store/*/bin/chromium')
+            chrome_paths.extend(nix_chrome_paths)
+            
+            chrome_binary = None
+            for path in chrome_paths:
+                if os.path.exists(path):
+                    chrome_binary = path
+                    print(f"✅ Chrome binary found: {chrome_binary}")
+                    break
+            
+            if not chrome_binary:
+                raise Exception("❌ Chrome binary not found!")
+            
+            chrome_options.binary_location = chrome_binary
+            
+            # Production Chrome options
+            chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_argument('--disable-plugins')
+            chrome_options.add_argument('--window-size=1920,1080')
+            chrome_options.add_argument('--disable-logging')
+            chrome_options.add_argument('--disable-background-timer-throttling')
+            chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+            chrome_options.add_argument('--disable-renderer-backgrounding')
+            chrome_options.add_argument('--disable-ipc-flooding-protection')
+            
+            # Try multiple ChromeDriver strategies
+            driver = None
+            
+            # Strategy 1: Use system chromedriver
+            try:
+                print("🔧 Strategy 1: System ChromeDriver")
                 
-                # Chrome binary path for Railway/Render
-                chrome_bin = os.environ.get('CHROME_BIN', '/usr/bin/chromium')
-                chrome_options.binary_location = chrome_bin
+                # Find system chromedriver
+                system_paths = [
+                    '/usr/bin/chromedriver',
+                    '/usr/local/bin/chromedriver'
+                ]
                 
-                print(f"🐧 Production mode: Chrome binary = {chrome_bin}")
+                nix_driver_paths = glob.glob('/nix/store/*/bin/chromedriver')
+                system_paths.extend(nix_driver_paths)
                 
-                # WebDriverManager kullan
-                try:
-                    from webdriver_manager.chrome import ChromeDriverManager
-                    service = Service(ChromeDriverManager().install())
-                    print(f"🐧 WebDriverManager: ChromeDriver otomatik kuruldu")
-                except:
-                    # Fallback to system chromedriver
-                    driver_path = os.environ.get('CHROMEDRIVER_PATH', '/usr/bin/chromedriver')
-                    service = Service(driver_path)
-                    print(f"🐧 Fallback: ChromeDriver = {driver_path}")
+                for driver_path in system_paths:
+                    if os.path.exists(driver_path):
+                        # Make executable
+                        try:
+                            os.chmod(driver_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+                            print(f"✅ Made executable: {driver_path}")
+                        except:
+                            pass
+                        
+                        try:
+                            service = Service(driver_path)
+                            driver = webdriver.Chrome(service=service, options=chrome_options)
+                            print(f"✅ System ChromeDriver success: {driver_path}")
+                            return driver
+                        except Exception as e:
+                            print(f"❌ System driver failed: {e}")
+                            continue
                 
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            else:
-                # Local development
+            except Exception as e:
+                print(f"❌ Strategy 1 failed: {e}")
+            
+            # Strategy 2: WebDriverManager with manual fix
+            try:
+                print("🔧 Strategy 2: WebDriverManager + Manual Fix")
+                
                 from webdriver_manager.chrome import ChromeDriverManager
                 
-                chrome_options = Options()
-                chrome_options.add_argument("--no-sandbox")
-                chrome_options.add_argument("--disable-dev-shm-usage")
-                chrome_options.add_argument("--window-size=1200,800")
+                # Download chromedriver
+                driver_path = ChromeDriverManager().install()
+                print(f"📥 Downloaded ChromeDriver: {driver_path}")
                 
-                service = Service(ChromeDriverManager().install())
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                # Make it executable
+                os.chmod(driver_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+                print(f"✅ Made ChromeDriver executable")
+                
+                # Test if it works
+                try:
+                    result = subprocess.run([driver_path, '--version'], 
+                                          capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0:
+                        print(f"✅ ChromeDriver test success: {result.stdout.strip()}")
+                        
+                        service = Service(driver_path)
+                        driver = webdriver.Chrome(service=service, options=chrome_options)
+                        print("✅ WebDriverManager success!")
+                        return driver
+                    else:
+                        print(f"❌ ChromeDriver test failed: {result.stderr}")
+                except Exception as e:
+                    print(f"❌ ChromeDriver test error: {e}")
+                
+            except Exception as e:
+                print(f"❌ Strategy 2 failed: {e}")
             
-            print("✅ Chrome browser başlatıldı")
+            # Strategy 3: Use chromium binary as driver (desperate attempt)
+            try:
+                print("🔧 Strategy 3: Chromium as driver")
+                
+                # Some systems can use chromium binary directly
+                service = Service(chrome_binary)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+                print("✅ Chromium-as-driver success!")
+                return driver
+                
+            except Exception as e:
+                print(f"❌ Strategy 3 failed: {e}")
+            
+            raise Exception("❌ All ChromeDriver strategies failed!")
+        
+        else:
+            # Local development
+            print("💻 Local Development Mode")
+            chrome_options.add_argument('--disable-web-security')
+            chrome_options.add_argument('--allow-running-insecure-content')
+            
+            from webdriver_manager.chrome import ChromeDriverManager
+            
+            driver_path = ChromeDriverManager().install()
+            service = Service(driver_path)
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            
+            return driver
+    
+    def browser_baslat(self):
+        """Chrome browser başlat - Ultimate fix ile"""
+        try:
+            print("💪 AliExpress Veri Çekme Uygulaması başlıyor!")
+            
+            # Ultimate Chrome setup kullan
+            self.driver = self.setup_chrome_driver_railway()
+            
+            print("✅ Chrome browser başarıyla başlatıldı")
             return True
             
         except Exception as e:

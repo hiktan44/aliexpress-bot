@@ -474,3 +474,4 @@ if __name__ == "__main__":
     print(f"🚀 Port {port} kullanılıyor")
     
     app.run(host='0.0.0.0', port=port, debug=False)
+# Railway cache bypass: 1748638090

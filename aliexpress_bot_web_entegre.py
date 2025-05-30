@@ -342,8 +342,8 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
         except Exception as e:
             print(f"Web sonuç ekleme hatası: {e}")
     
-    def setup_chrome_driver_railway(self):
-        """Railway için Chrome driver kurulumu - Ultimate fix"""
+    def setup_chrome_driver_hybrid(self, visible_mode=False):
+        """Hybrid Chrome driver - Headless ilk, CAPTCHA varsa Visible"""
         
         chrome_options = Options()
         
@@ -351,27 +351,27 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
         is_production = (
             os.environ.get('RAILWAY_ENVIRONMENT') == 'production' or 
             'railway' in os.environ.get('RAILWAY_PROJECT_NAME', '').lower() or
-            os.path.exists('/app') or  # Railway/Docker container indicator
-            os.environ.get('CHROME_BIN') or  # Docker environment
-            os.environ.get('PORT')  # Railway port
+            os.path.exists('/app') or
+            os.environ.get('CHROME_BIN') or
+            os.environ.get('PORT')
         )
         
         if is_production:
-            print("🐧 Railway Production Mode - Ultimate Chrome Setup")
+            if visible_mode:
+                print("👁️ Railway VISIBLE Mode - CAPTCHA Manuel Çözme")
+            else:
+                print("🐧 Railway HEADLESS Mode - Hızlı İşlem")
             
-            # Chrome binary paths to try (Docker optimized)
+            # Chrome binary detection
             chrome_paths = [
                 '/usr/bin/chromium',
-                '/usr/bin/chromium-browser',
+                '/usr/bin/chromium-browser', 
                 '/usr/bin/google-chrome',
                 '/usr/bin/google-chrome-stable',
-                os.environ.get('CHROME_BIN', '')  # Docker environment variable
+                os.environ.get('CHROME_BIN', '')
             ]
             
-            # Remove empty paths
             chrome_paths = [path for path in chrome_paths if path]
-            
-            # Find Chrome using nix store (Railway) or system (Docker)
             nix_chrome_paths = glob.glob('/nix/store/*/bin/chromium')
             chrome_paths.extend(nix_chrome_paths)
             
@@ -379,7 +379,7 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
             for path in chrome_paths:
                 if os.path.exists(path):
                     chrome_binary = path
-                    print(f"✅ Chrome binary found: {chrome_binary}")
+                    print(f"✅ Chrome binary: {chrome_binary}")
                     break
             
             if not chrome_binary:
@@ -387,192 +387,224 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
             
             chrome_options.binary_location = chrome_binary
             
-            # Production Chrome options
-            chrome_options.add_argument('--headless=new')
+            # Mode'a göre ayarlar
+            if visible_mode:
+                # VISIBLE MODE - CAPTCHA için
+                print("🖥️ Visible mode aktif - CAPTCHA manuel çözülebilir")
+                # headless KAPALI
+                chrome_options.add_argument('--window-size=1200,900')
+                chrome_options.add_argument('--start-maximized')
+            else:
+                # HEADLESS MODE - Hızlı
+                print("⚡ Headless mode aktif - Hızlı işlem")
+                chrome_options.add_argument('--headless=new')
+                chrome_options.add_argument('--window-size=1920,1080')
+            
+            # Ortak ayarlar
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
             chrome_options.add_argument('--disable-features=VizDisplayCompositor')
             chrome_options.add_argument('--disable-extensions')
             chrome_options.add_argument('--disable-plugins')
-            chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument('--disable-logging')
-            chrome_options.add_argument('--disable-background-timer-throttling')
-            chrome_options.add_argument('--disable-backgrounding-occluded-windows')
-            chrome_options.add_argument('--disable-renderer-backgrounding')
-            chrome_options.add_argument('--disable-ipc-flooding-protection')
             
-            # Try multiple ChromeDriver strategies
-            driver = None
+            # Anti-detection (her iki modda)
+            chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
             
-            # Strategy 1: Use system chromedriver
+            # ChromeDriver setup
             try:
-                print("🔧 Strategy 1: System ChromeDriver")
+                print("🔧 Hybrid ChromeDriver Setup")
                 
-                # Find system chromedriver (Docker + Railway)
+                # System paths
                 system_paths = [
                     '/usr/bin/chromedriver',
                     '/usr/local/bin/chromedriver',
-                    os.environ.get('CHROMEDRIVER_PATH', '')  # Docker environment
+                    os.environ.get('CHROMEDRIVER_PATH', '')
                 ]
                 
-                # Remove empty paths
                 system_paths = [path for path in system_paths if path]
-                
-                # Nix store paths (Railway)
                 nix_driver_paths = glob.glob('/nix/store/*/bin/chromedriver')
                 system_paths.extend(nix_driver_paths)
                 
                 for driver_path in system_paths:
                     if os.path.exists(driver_path):
-                        # Make executable
                         try:
                             os.chmod(driver_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
-                            print(f"✅ Made executable: {driver_path}")
                         except:
                             pass
                         
                         try:
                             service = Service(driver_path)
                             driver = webdriver.Chrome(service=service, options=chrome_options)
-                            print(f"✅ System ChromeDriver success: {driver_path}")
+                            
+                            # Anti-detection script
+                            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                            
+                            mode_text = "VISIBLE" if visible_mode else "HEADLESS"
+                            print(f"✅ Hybrid {mode_text} Chrome success!")
                             return driver
+                            
                         except Exception as e:
-                            print(f"❌ System driver failed: {e}")
+                            print(f"❌ Hybrid driver failed: {e}")
                             continue
-                
-            except Exception as e:
-                print(f"❌ Strategy 1 failed: {e}")
             
-            # Strategy 2: WebDriverManager with manual fix
+            except Exception as e:
+                print(f"❌ Hybrid Chrome setup failed: {e}")
+            
+            # Fallback: WebDriverManager
             try:
-                print("🔧 Strategy 2: WebDriverManager + Manual Fix")
-                
                 from webdriver_manager.chrome import ChromeDriverManager
                 
-                # Download chromedriver
                 driver_path = ChromeDriverManager().install()
-                print(f"📥 Downloaded ChromeDriver: {driver_path}")
-                
-                # Make it executable
                 os.chmod(driver_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
-                print(f"✅ Made ChromeDriver executable")
                 
-                # Test if it works
-                try:
-                    result = subprocess.run([driver_path, '--version'], 
-                                          capture_output=True, text=True, timeout=10)
-                    if result.returncode == 0:
-                        print(f"✅ ChromeDriver test success: {result.stdout.strip()}")
-                        
-                        service = Service(driver_path)
-                        driver = webdriver.Chrome(service=service, options=chrome_options)
-                        print("✅ WebDriverManager success!")
-                        return driver
-                    else:
-                        print(f"❌ ChromeDriver test failed: {result.stderr}")
-                except Exception as e:
-                    print(f"❌ ChromeDriver test error: {e}")
-                
-            except Exception as e:
-                print(f"❌ Strategy 2 failed: {e}")
-            
-            # Strategy 3: Use chromium binary as driver (desperate attempt)
-            try:
-                print("🔧 Strategy 3: Chromium as driver")
-                
-                # Some systems can use chromium binary directly
-                service = Service(chrome_binary)
+                service = Service(driver_path)
                 driver = webdriver.Chrome(service=service, options=chrome_options)
-                print("✅ Chromium-as-driver success!")
+                
+                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                
+                mode_text = "VISIBLE" if visible_mode else "HEADLESS"
+                print(f"✅ Hybrid WebDriverManager {mode_text} success!")
                 return driver
                 
             except Exception as e:
-                print(f"❌ Strategy 3 failed: {e}")
+                print(f"❌ Hybrid WebDriverManager failed: {e}")
             
-            raise Exception("❌ All ChromeDriver strategies failed!")
+            raise Exception("❌ All hybrid Chrome strategies failed!")
         
         else:
             # Local development
             print("💻 Local Development Mode")
+            
+            if not visible_mode:
+                chrome_options.add_argument('--headless=new')
+            
             chrome_options.add_argument('--disable-web-security')
             chrome_options.add_argument('--allow-running-insecure-content')
             
             from webdriver_manager.chrome import ChromeDriverManager
-            
-            driver_path = ChromeDriverManager().install()
-            service = Service(driver_path)
+            service = Service(ChromeDriverManager().install())
             driver = webdriver.Chrome(service=service, options=chrome_options)
             
             return driver
     
     def browser_baslat(self):
-        """Chrome browser başlat - Ultimate fix ile"""
+        """Chrome browser başlat - Hybrid Mode"""
         try:
-            print("💪 AliExpress Veri Çekme Uygulaması başlıyor!")
+            print("💪 AliExpress Hybrid Sistem başlıyor!")
+            print("⚡ İlk headless mode, CAPTCHA varsa visible mode!")
             
-            # Ultimate Chrome setup kullan
-            self.driver = self.setup_chrome_driver_railway()
+            # İlk headless mode'da başla
+            self.driver = self.setup_chrome_driver_hybrid(visible_mode=False)
             
-            print("✅ Chrome browser başarıyla başlatıldı")
+            print("✅ Hybrid Chrome başlatıldı (Headless → Visible)")
             return True
             
         except Exception as e:
-            print(f"❌ Browser hatası: {e}")
+            print(f"❌ Hybrid browser hatası: {e}")
             return False
     
-    def captcha_bekle(self):
-        """CAPTCHA manuel çözme - Web arayüzü ile"""
-        global captcha_waiting, captcha_action
+    def hybrid_captcha_handler(self):
+        """Hybrid CAPTCHA Handler - CAPTCHA varsa visible mode'a geç"""
         
-        captcha_selectors = ["iframe[src*='captcha']", ".nc_wrapper", ".geetest"]
+        # CAPTCHA kontrol selectors
+        captcha_selectors = [
+            "iframe[src*='captcha']",
+            ".nc_wrapper", 
+            ".geetest",
+            "[class*='captcha']",
+            "[id*='captcha']", 
+            ".slider-track",
+            ".verify-code",
+            "[data-sitekey]",  # reCAPTCHA
+            ".captcha-container"
+        ]
+        
+        # CAPTCHA var mı kontrol et
+        captcha_detected = False
+        captcha_type = ""
         
         for selector in captcha_selectors:
-            if self.driver.find_elements(By.CSS_SELECTOR, selector):
-                print("\n🤖 CAPTCHA TESPİT EDİLDİ!")
+            elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+            if elements:
+                captcha_detected = True
+                captcha_type = selector
+                print(f"\n🤖 CAPTCHA TESPİT EDİLDİ: {selector}")
+                break
+        
+        if captcha_detected:
+            print("🔄 HYBRID MODE: Headless → Visible geçiş yapılıyor...")
+            
+            # Mevcut URL'i kaydet
+            current_url = self.driver.current_url
+            
+            # Headless driver'ı kapat
+            self.driver.quit()
+            time.sleep(2)
+            
+            # Visible mode'da yeni driver başlat
+            try:
+                self.driver = self.setup_chrome_driver_hybrid(visible_mode=True)
+                print("✅ Visible mode driver başlatıldı")
                 
-                # Production ortamında web arayüzü ile bekleme
-                is_production = os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('RENDER')
+                # Aynı sayfaya git
+                self.driver.get(current_url)
+                time.sleep(3)
                 
-                if is_production:
-                    print("🌐 Production mode: Web arayüzünde CAPTCHA modal'i açılacak...")
+                print("👁️ CAPTCHA MANUEL ÇÖZME MOD!")
+                print("🖥️ Chrome penceresini görebilirsiniz:")
+                print("   1. CAPTCHA'yı manuel olarak çözün")
+                print("   2. 'Ben robot değilim' işaretleyin") 
+                print("   3. Slider'ı kaydırın")
+                print("   4. Resim seçimi yapın")
+                print("   5. Sayfa yüklenmeyi bekleyin")
+                
+                # Manuel çözme bekleme
+                max_wait = 300  # 5 dakika
+                waited = 0
+                
+                while waited < max_wait:
+                    time.sleep(5)
+                    waited += 5
                     
-                    # CAPTCHA durumunu ayarla
-                    captcha_waiting = True
-                    captcha_action = None
-                    
-                    # Web arayüzünden cevap bekle
-                    timeout = 300  # 5 dakika maksimum bekleme
-                    waited = 0
-                    
-                    while captcha_waiting and waited < timeout:
-                        time.sleep(2)
-                        waited += 2
+                    try:
+                        # Sayfa title kontrol
+                        page_title = self.driver.title
+                        if page_title and len(page_title) > 10 and 'captcha' not in page_title.lower():
+                            # Ürün bilgisi var mı kontrol
+                            h1_elements = self.driver.find_elements(By.TAG_NAME, "h1")
+                            if h1_elements and h1_elements[0].text.strip():
+                                print("✅ CAPTCHA başarıyla çözüldü! Sayfa yüklendi.")
+                                return True
                         
-                        if captcha_action == 'continue':
-                            print("✅ Kullanıcı CAPTCHA'ı çözdü!")
-                            captcha_waiting = False
-                            captcha_action = None
-                            break
-                        elif captcha_action == 'skip':
-                            print("⏭️ Kullanıcı ürünü atlamayı seçti")
-                            captcha_waiting = False
-                            captcha_action = None
-                            return "skip"
-                    
-                    if waited >= timeout:
-                        print("⏰ CAPTCHA bekleme zaman aşımı, ürün atlanıyor...")
-                        captcha_waiting = False
-                        return "skip"
+                        # CAPTCHA hala var mı
+                        still_captcha = False
+                        for selector in captcha_selectors:
+                            if self.driver.find_elements(By.CSS_SELECTOR, selector):
+                                still_captcha = True
+                                break
                         
-                else:
-                    # Local development - manuel çözme
-                    print("👤 Chrome'da CAPTCHA'yı çözün ve ENTER'a basın...")
-                    input("✅ CAPTCHA çözüldü mü? ENTER: ")
+                        if not still_captcha:
+                            print("✅ CAPTCHA kayboldu! İşlem devam ediyor.")
+                            return True
+                            
+                    except Exception as e:
+                        print(f"⚠️ CAPTCHA çözme kontrol hatası: {e}")
+                    
+                    # Progress indicator
+                    if waited % 30 == 0:
+                        remaining = max_wait - waited
+                        print(f"⏰ CAPTCHA manuel çözme bekleniyor... Kalan: {remaining}s")
                 
-                self.manuel_captcha += 1
-                self.web_durumu_guncelle()
-                return True
+                print("⏰ CAPTCHA çözme süresi doldu. Ürün atlanıyor...")
+                return "skip"
+                
+            except Exception as e:
+                print(f"❌ Visible mode geçiş hatası: {e}")
+                return "skip"
+        
         return False
     
     def sayfa_tamamen_yukle(self):
@@ -652,11 +684,12 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
             print(f"\n💪 ÜRÜN {self.current_index + 1}/{self.total_links}")
             print(f"🔗 {link[:60]}...")
             
-            # Sayfaya git
+            # Sayfaya git (headless modda)
             self.driver.get(link)
+            time.sleep(3)
             
-            # CAPTCHA kontrolü
-            captcha_result = self.captcha_bekle()
+            # Hybrid CAPTCHA handler
+            captcha_result = self.hybrid_captcha_handler()
             if captcha_result == "skip":
                 print("⏭️ CAPTCHA nedeniyle ürün atlandı")
                 return {
@@ -668,7 +701,7 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
                     'Durum': 'CAPTCHA Skip'
                 }
             elif captcha_result:
-                print("✅ CAPTCHA çözüldü")
+                print("✅ CAPTCHA başarıyla çözüldü (Hybrid)")
             
             # Sayfayı tamamen yükle
             self.sayfa_tamamen_yukle()

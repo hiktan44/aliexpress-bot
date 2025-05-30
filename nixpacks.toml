@@ -1,0 +1,8 @@
+[phases.setup]
+aptPackages = ["chromium", "chromium-driver", "xvfb"]
+
+[phases.build]
+cmds = ["pip install -r requirements.txt"]
+
+[start]
+cmd = "python3 aliexpress_bot_web_entegre.py"

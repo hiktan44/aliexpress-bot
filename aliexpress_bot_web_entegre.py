@@ -360,7 +360,7 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
                 chrome_options.add_argument('--disable-images')
                 
                 # Chrome binary path for Railway/Render
-                chrome_bin = os.environ.get('CHROME_BIN', '/usr/bin/google-chrome')
+                chrome_bin = os.environ.get('CHROME_BIN', '/usr/bin/chromium')
                 chrome_options.binary_location = chrome_bin
                 
                 # ChromeDriver path

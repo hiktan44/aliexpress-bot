@@ -351,21 +351,27 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
         is_production = (
             os.environ.get('RAILWAY_ENVIRONMENT') == 'production' or 
             'railway' in os.environ.get('RAILWAY_PROJECT_NAME', '').lower() or
-            os.path.exists('/app')  # Railway container indicator
+            os.path.exists('/app') or  # Railway/Docker container indicator
+            os.environ.get('CHROME_BIN') or  # Docker environment
+            os.environ.get('PORT')  # Railway port
         )
         
         if is_production:
             print("🐧 Railway Production Mode - Ultimate Chrome Setup")
             
-            # Chrome binary paths to try
+            # Chrome binary paths to try (Docker optimized)
             chrome_paths = [
                 '/usr/bin/chromium',
                 '/usr/bin/chromium-browser',
                 '/usr/bin/google-chrome',
-                '/usr/bin/google-chrome-stable'
+                '/usr/bin/google-chrome-stable',
+                os.environ.get('CHROME_BIN', '')  # Docker environment variable
             ]
             
-            # Find Chrome using nix store
+            # Remove empty paths
+            chrome_paths = [path for path in chrome_paths if path]
+            
+            # Find Chrome using nix store (Railway) or system (Docker)
             nix_chrome_paths = glob.glob('/nix/store/*/bin/chromium')
             chrome_paths.extend(nix_chrome_paths)
             
@@ -403,12 +409,17 @@ Cevabın sadece 8 haneli HS kodu olsun. Örnek: 85171100
             try:
                 print("🔧 Strategy 1: System ChromeDriver")
                 
-                # Find system chromedriver
+                # Find system chromedriver (Docker + Railway)
                 system_paths = [
                     '/usr/bin/chromedriver',
-                    '/usr/local/bin/chromedriver'
+                    '/usr/local/bin/chromedriver',
+                    os.environ.get('CHROMEDRIVER_PATH', '')  # Docker environment
                 ]
                 
+                # Remove empty paths
+                system_paths = [path for path in system_paths if path]
+                
+                # Nix store paths (Railway)
                 nix_driver_paths = glob.glob('/nix/store/*/bin/chromedriver')
                 system_paths.extend(nix_driver_paths)
                 

@@ -1,0 +1,32 @@
+# Railway Alternative Fix - Dockerfile yerine nixpacks.toml
+
+[phases.setup]
+nixPkgs = [
+    "chromium",
+    "chromedriver",
+    "python311",
+    "python311Packages.pip"
+]
+
+[phases.install]
+cmds = [
+    "python -m venv /tmp/venv",
+    ". /tmp/venv/bin/activate && pip install -r requirements.txt"
+]
+
+[phases.build] 
+cmds = [
+    "echo 'Chrome setup starting...'",
+    "which chromium",
+    "which chromedriver", 
+    "chmod +x /nix/store/*/bin/chromedriver 2>/dev/null || true",
+    "mkdir -p /usr/local/bin",
+    "ln -sf /nix/store/*/bin/chromedriver /usr/local/bin/chromedriver 2>/dev/null || true"
+]
+
+[start]
+cmd = ". /tmp/venv/bin/activate && python aliexpress_bot_web_entegre.py"
+
+[variables]
+CHROME_BIN = "/nix/store/*/bin/chromium"
+CHROMEDRIVER_PATH = "/usr/local/bin/chromedriver"

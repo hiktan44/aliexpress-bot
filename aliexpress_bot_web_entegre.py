@@ -467,12 +467,12 @@ WEB_TEMPLATE = '''
         </div>
 
         <h3>🔧 Bot Kontrolleri</h3>
-        <button onclick="runBot()" class="btn success" {{ 'disabled' if bot_running else '' }}>
+        <button onclick="runBot()" class="btn success" {{ 'disabled' if bot_running else '' }} id="start_btn">
             🚀 {{ 'Ultimate Bot Çalışıyor...' if bot_running else 'Ultimate Bot Başlat' }}
         </button>
-        <button onclick="stopBot()" class="btn danger">⏹️ Bot Durdur</button>
-        <button onclick="downloadExcel()" class="btn info">📊 Excel İndir</button>
-        <button onclick="clearResults()" class="btn warning">🗑️ Temizle</button>
+        <button onclick="stopBot()" class="btn danger" {{ 'disabled' if not bot_running else '' }} id="stop_btn">⏹️ Bot Durdur</button>
+        <button onclick="downloadExcel()" class="btn info" id="excel_btn">📊 Excel İndir</button>
+        <button onclick="clearResults()" class="btn warning" id="clear_btn">🗑️ Temizle</button>
 
         <h3>📁 Excel Dosyası Yükle</h3>
         <div class="upload-area">
@@ -602,12 +602,16 @@ https://www.aliexpress.com/item/1005003456789012.html</textarea>
 
         function runBot() {
             const urls = document.getElementById('test_urls').value;
-            const urlList = urls.split('\\n').filter(url => url.trim() && url.includes('aliexpress'));
+            const urlList = urls.split('\n').filter(url => url.trim() && url.includes('aliexpress'));
             
             if (urlList.length === 0) {
                 alert('Geçerli AliExpress URL\'leri girin!');
                 return;
             }
+            
+            // Butonu disable et
+            event.target.disabled = true;
+            event.target.innerText = 'Bot Başlatılıyor...';
             
             fetch('/run-ultimate', {
                 method: 'POST',
@@ -621,30 +625,90 @@ https://www.aliexpress.com/item/1005003456789012.html</textarea>
                     setTimeout(() => location.reload(), 2000);
                 } else {
                     alert('Hata: ' + data.error);
+                    event.target.disabled = false;
+                    event.target.innerText = '🚀 Ultimate Bot Başlat';
                 }
+            })
+            .catch(error => {
+                alert('Bağlantı hatası: ' + error);
+                event.target.disabled = false;
+                event.target.innerText = '🚀 Ultimate Bot Başlat';
             });
         }
 
         function stopBot() {
+            if (!confirm('Bot\'u durdurmak istediğinizden emin misiniz?')) {
+                return;
+            }
+            
+            // Butonu disable et
+            event.target.disabled = true;
+            event.target.innerText = 'Durduruluyor...';
+            
             fetch('/stop-ultimate', {method: 'POST'})
             .then(response => response.json())
             .then(data => {
                 alert(data.message);
                 location.reload();
+            })
+            .catch(error => {
+                alert('Durdurma hatası: ' + error);
+                event.target.disabled = false;
+                event.target.innerText = '⏹️ Bot Durdur';
             });
         }
 
         function processUrls() { runBot(); }
 
         function clearResults() {
-            if (confirm('Tüm sonuçları silmek istediğinizden emin misiniz?')) {
-                fetch('/clear-results', {method: 'POST'})
-                .then(() => location.reload());
+            if ({{ results|length }} === 0) {
+                alert('Temizlenecek sonuç yok!');
+                return;
             }
+            
+            if (!confirm('Tüm sonuçları silmek istediğinizden emin misiniz?')) {
+                return;
+            }
+            
+            // Butonu disable et
+            event.target.disabled = true;
+            event.target.innerText = 'Temizleniyor...';
+            
+            fetch('/clear-results', {method: 'POST'})
+            .then(response => response.json())
+            .then(data => {
+                alert('Sonuçlar temizlendi!');
+                location.reload();
+            })
+            .catch(error => {
+                alert('Temizleme hatası: ' + error);
+                event.target.disabled = false;
+                event.target.innerText = '🗑️ Temizle';
+            });
         }
         
         function downloadExcel() {
-            window.open('/download-excel', '_blank');
+            if ({{ results|length }} === 0) {
+                alert('İndirilecek sonuç yok! Önce bot\'u çalıştırın.');
+                return;
+            }
+            
+            // Loading göster
+            event.target.disabled = true;
+            event.target.innerText = 'Excel Hazırlanıyor...';
+            
+            const link = document.createElement('a');
+            link.href = '/download-excel';
+            link.download = 'aliexpress_sonuclar.xlsx';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Butonu geri al
+            setTimeout(() => {
+                event.target.disabled = false;
+                event.target.innerText = '📊 Excel İndir';
+            }, 2000);
         }
         
         function downloadResults() {

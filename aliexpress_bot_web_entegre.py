@@ -1,122 +1,95 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-AliExpress Bot - Complete Ultimate V3
-Scrape.do + Anti-Captcha + Excel + Working Buttons
-"""
-
-import pandas as pd
-import time
-import random
-import os
-import threading
-import requests
-import json
-import re
-import io
-from datetime import datetime
-from urllib.parse import quote
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-
-# Flask web server için
-from flask import Flask, jsonify, render_template_string, request, send_file
-
-app = Flask(__name__)
-PORT = int(os.getenv('PORT', 5000))
-
-class ScrapeDoAPI:
-    def __init__(self, token):
-        self.token = token
-        self.base_url = "http://api.scrape.do"
-        
-    def scrape_aliexpress(self, url):
-        """AliExpress için optimize edilmiş Scrape.do çağrısı"""
-        try:
-            encoded_url = quote(url, safe='')
-            
-            params = {
-                'url': encoded_url,
-                'token': self.token,
-                'super': 'true',
-                'render': 'true',
-                'extraHeaders': 'true',
-                'geoCode': 'us',
-                'playwithbrowser': json.dumps([{
-                    "action": "WaitSelector",
-                    "waitSelector": ".product-price-value,[class^='price--current--']",
-                    "timeout": 20000
-                }])
-            }
-            
-            headers = {'sd-referer': 'https://www.aliexpress.com/'}
-            response = requests.get(self.base_url, params=params, headers=headers, timeout=60)
-            
-            if response.status_code == 200:
-                return response.text
-            else:
-                print(f"❌ Scrape.do hata: {response.status_code}")
-                return None
-                
-        except Exception as e:
-            print(f"❌ Scrape.do API hatası: {e}")
-            return None
-
-class AntiCaptchaAPI:
-    def __init__(self, api_key):
-        self.api_key = api_key
-        self.base_url = "https://api.anti-captcha.com"
-        
-    def get_balance(self):
-        """Bakiye kontrolü"""
-        try:
-            response = requests.post(f"{self.base_url}/getBalance", 
-                                   json={"clientKey": self.api_key})
-            result = response.json()
-            if result.get("errorId") == 0:
-                return result.get("balance")
-            return None
-        except:
-            return None
-
 class AliExpressParser:
-    """AliExpress JSON data parser"""
+    """Geliştirilmiş AliExpress JSON data parser"""
     
     @staticmethod
     def extract_json_data(html_content):
-        """HTML içinden JSON datalarını çıkar"""
+        """HTML içinden JSON datalarını çıkar - Geliştirilmiş"""
         try:
-            json_patterns = [
-                r'window\.runParams\s*=\s*({.*?});',
-                r'window\.pageData\s*=\s*({.*?});', 
-                r'"priceModule":\s*({.*?}),',
-                r'"titleModule":\s*({.*?}),',
-                r'"imageModule":\s*({.*?}),',
-            ]
-            
             extracted_data = {}
             
-            for pattern in json_patterns:
+            # Method 1: window.runParams - Ana veri kaynağı
+            runparams_patterns = [
+                r'window\.runParams\s*=\s*({.*?});',
+                r'runParams\s*:\s*({.*?}),',
+                r'window\["runParams"\]\s*=\s*({.*?});'
+            ]
+            
+            for pattern in runparams_patterns:
+                matches = re.findall(pattern, html_content, re.DOTALL)
+                for match in matches:
+                    try:
+                        # JSON temizle ve parse et
+                        cleaned = re.sub(r'//.*?\n', '', match)  # Yorumları kaldır
+                        cleaned = re.sub(r'/\*.*?\*/', '', cleaned, flags=re.DOTALL)  # Block yorumları
+                        data = json.loads(cleaned)
+                        extracted_data.update(data)
+                        print("✅ runParams JSON bulundu!")
+                    except Exception as e:
+                        print(f"runParams parse hatası: {e}")
+                        continue
+            
+            # Method 2: Script tag içindeki JSON'lar
+            script_patterns = [
+                r'<script[^>]*>(.*?)</script>',
+            ]
+            
+            for script_match in re.finditer(script_patterns[0], html_content, re.DOTALL | re.IGNORECASE):
+                script_content = script_match.group(1)
+                
+                # İçinde JSON arama patterns
+                json_patterns = [
+                    r'"data"\s*:\s*({.*?"priceModule".*?})',
+                    r'"priceModule"\s*:\s*({.*?})',
+                    r'"titleModule"\s*:\s*({.*?})',
+                    r'"imageModule"\s*:\s*({.*?})',
+                    r'"skuModule"\s*:\s*({.*?})',
+                    r'"storeModule"\s*:\s*({.*?})',
+                    r'"feedbackModule"\s*:\s*({.*?})'
+                ]
+                
+                for pattern in json_patterns:
+                    matches = re.findall(pattern, script_content, re.DOTALL)
+                    for match in matches:
+                        try:
+                            # Başına ve sonuna { } ekle
+                            if not match.startswith('{'):
+                                match = '{' + match
+                            if not match.endswith('}'):
+                                match = match + '}'
+                            
+                            data = json.loads(match)
+                            extracted_data.update(data)
+                            print(f"✅ Script JSON bulundu: {pattern[:20]}...")
+                        except:
+                            continue
+            
+            # Method 3: Direkt module arama
+            module_patterns = [
+                r'window\.runParams\s*=.*?"data"\s*:\s*({.*?})',
+                r'__INITIAL_STATE__\s*=\s*({.*?});',
+                r'window\.__moduleData__\s*=\s*({.*?});'
+            ]
+            
+            for pattern in module_patterns:
                 matches = re.findall(pattern, html_content, re.DOTALL)
                 for match in matches:
                     try:
                         data = json.loads(match)
                         extracted_data.update(data)
+                        print("✅ Module JSON bulundu!")
                     except:
                         continue
             
+            print(f"📊 Toplam çıkarılan JSON keys: {list(extracted_data.keys())}")
             return extracted_data
             
         except Exception as e:
-            print(f"❌ JSON extraction hatası: {e}")
+            print(f"❌ JSON extraction genel hatası: {e}")
             return {}
     
     @staticmethod
     def parse_product_data(json_data, html_content):
-        """JSON data'dan ürün bilgilerini çıkar"""
+        """JSON data'dan ürün bilgilerini çıkar - Geliştirilmiş"""
         try:
             product_info = {
                 'title': 'Bilgi bulunamadı',
@@ -126,842 +99,257 @@ class AliExpressParser:
                 'sold_count': 'Bilgi bulunamadı'
             }
             
-            # BAŞLIK - JSON'dan
+            print(f"🔍 JSON data keys: {list(json_data.keys())}")
+            
+            # BAŞLIK - Çoklu kaynak arama
             title_sources = [
+                # runParams içinden
+                lambda d: d.get('data', {}).get('titleModule', {}).get('subject', ''),
                 lambda d: d.get('titleModule', {}).get('subject', ''),
+                # Direkt arama
+                lambda d: d.get('subject', ''),
+                lambda d: d.get('productTitle', ''),
+                lambda d: d.get('title', ''),
+                # İç içe arama
                 lambda d: d.get('data', {}).get('subject', ''),
+                lambda d: d.get('product', {}).get('title', ''),
+                lambda d: d.get('product', {}).get('subject', '')
             ]
             
-            for source in title_sources:
+            for i, source in enumerate(title_sources):
                 try:
                     title = source(json_data)
-                    if title and len(title) > 10:
+                    if title and len(title) > 10 and 'AliExpress' not in title:
                         product_info['title'] = title[:200]
+                        print(f"✅ Başlık bulundu (method {i+1}): {title[:50]}...")
                         break
-                except:
+                except Exception as e:
+                    print(f"Title source {i+1} hatası: {e}")
                     continue
             
-            # FİYAT - JSON'dan
+            # FİYAT - Çoklu kaynak arama
             price_sources = [
+                # runParams priceModule
+                lambda d: d.get('data', {}).get('priceModule', {}).get('formatedPrice', ''),
                 lambda d: d.get('priceModule', {}).get('formatedPrice', ''),
+                lambda d: d.get('data', {}).get('priceModule', {}).get('minPrice', {}).get('formatedPrice', ''),
                 lambda d: d.get('priceModule', {}).get('minPrice', {}).get('formatedPrice', ''),
+                # skuModule
+                lambda d: d.get('data', {}).get('skuModule', {}).get('skuPriceList', [{}])[0].get('skuVal', {}).get('skuAmount', {}).get('formatedAmount', ''),
+                lambda d: d.get('skuModule', {}).get('skuPriceList', [{}])[0].get('skuVal', {}).get('skuAmount', {}).get('formatedAmount', ''),
+                # Direkt price alanları
+                lambda d: d.get('price', ''),
+                lambda d: d.get('formatedPrice', ''),
+                lambda d: d.get('minPrice', ''),
+                lambda d: d.get('maxPrice', ''),
+                # İç içe arama
+                lambda d: d.get('data', {}).get('price', ''),
+                lambda d: d.get('product', {}).get('price', '')
             ]
             
-            for source in price_sources:
+            for i, source in enumerate(price_sources):
                 try:
                     price = source(json_data)
-                    if price:
-                        product_info['price'] = price
+                    if price and price != '0' and len(str(price)) > 1:
+                        product_info['price'] = str(price)
+                        print(f"✅ Fiyat bulundu (method {i+1}): {price}")
                         break
-                except:
+                except Exception as e:
+                    print(f"Price source {i+1} hatası: {e}")
                     continue
             
-            # RESİM - JSON'dan
+            # RESİM - Çoklu kaynak arama
             image_sources = [
+                # imageModule
+                lambda d: d.get('data', {}).get('imageModule', {}).get('imagePathList', [None])[0],
                 lambda d: d.get('imageModule', {}).get('imagePathList', [None])[0],
+                # Direkt image alanları
+                lambda d: d.get('image', ''),
+                lambda d: d.get('imageUrl', ''),
+                lambda d: d.get('images', [None])[0] if d.get('images') else None,
+                # İç içe arama
+                lambda d: d.get('data', {}).get('image', ''),
+                lambda d: d.get('product', {}).get('image', ''),
+                lambda d: d.get('product', {}).get('images', [None])[0] if d.get('product', {}).get('images') else None
             ]
             
-            for source in image_sources:
+            for i, source in enumerate(image_sources):
                 try:
                     image = source(json_data)
-                    if image:
+                    if image and 'http' in str(image):
+                        # AliExpress resim URL'sini düzelt
                         if not image.startswith('http'):
-                            image = 'https:' + image if image.startswith('//') else 'https://ae01.alicdn.com/kf/' + image
+                            if image.startswith('//'):
+                                image = 'https:' + image
+                            else:
+                                image = 'https://ae01.alicdn.com/kf/' + image
                         product_info['image'] = image
+                        print(f"✅ Resim bulundu (method {i+1}): {image[:50]}...")
                         break
-                except:
+                except Exception as e:
+                    print(f"Image source {i+1} hatası: {e}")
                     continue
             
-            # HTML fallback
-            if product_info['title'] == 'Bilgi bulunamadı':
-                title_match = re.search(r'<title[^>]*>([^<]+)</title>', html_content, re.IGNORECASE)
-                if title_match:
-                    title = title_match.group(1).strip()
-                    if 'AliExpress' not in title and len(title) > 10:
-                        product_info['title'] = title[:200]
-            
-            if product_info['price'] == 'Bilgi bulunamadı':
-                price_patterns = [
-                    r'US\s*\$\s*[\d,.]+',
-                    r'[\$€£¥₹₽]\s*[\d,.]+',
+            # RATING ve SATIŞ SAYISI
+            try:
+                # Rating
+                rating_sources = [
+                    lambda d: d.get('data', {}).get('storeModule', {}).get('storeRating', ''),
+                    lambda d: d.get('storeModule', {}).get('storeRating', ''),
+                    lambda d: d.get('data', {}).get('feedbackModule', {}).get('averageStar', ''),
+                    lambda d: d.get('feedbackModule', {}).get('averageStar', ''),
+                    lambda d: d.get('rating', ''),
+                    lambda d: d.get('averageRating', '')
                 ]
-                for pattern in price_patterns:
-                    price_match = re.search(pattern, html_content)
-                    if price_match:
-                        product_info['price'] = price_match.group(0)
-                        break
+                
+                for source in rating_sources:
+                    try:
+                        rating = source(json_data)
+                        if rating:
+                            product_info['rating'] = str(rating)
+                            print(f"✅ Rating bulundu: {rating}")
+                            break
+                    except:
+                        continue
+                
+                # Satış sayısı
+                sold_sources = [
+                    lambda d: d.get('data', {}).get('tradeModule', {}).get('formatTradeCount', ''),
+                    lambda d: d.get('tradeModule', {}).get('formatTradeCount', ''),
+                    lambda d: d.get('data', {}).get('skuModule', {}).get('totalSoldCount', ''),
+                    lambda d: d.get('skuModule', {}).get('totalSoldCount', ''),
+                    lambda d: d.get('soldCount', ''),
+                    lambda d: d.get('totalSold', '')
+                ]
+                
+                for source in sold_sources:
+                    try:
+                        sold = source(json_data)
+                        if sold:
+                            product_info['sold_count'] = str(sold)
+                            print(f"✅ Satış sayısı bulundu: {sold}")
+                            break
+                    except:
+                        continue
+                        
+            except Exception as e:
+                print(f"Rating/Sold parsing hatası: {e}")
             
+            # Eğer JSON'dan hiçbir şey bulamazsak HTML fallback
+            if all(v == 'Bilgi bulunamadı' for k, v in product_info.items() if k != 'rating' and k != 'sold_count'):
+                print("⚠️ JSON'dan hiçbir veri bulunamadı, HTML fallback aktif...")
+                return AliExpressParser.html_fallback_parsing(html_content)
+            
+            print(f"📋 Final product info: {product_info}")
             return product_info
             
         except Exception as e:
             print(f"❌ Product parsing hatası: {e}")
-            return {
-                'title': 'Parse hatası',
-                'price': 'Parse hatası', 
-                'image': 'Parse hatası',
-                'rating': 'Parse hatası',
-                'sold_count': 'Parse hatası'
+            # HTML fallback
+            return AliExpressParser.html_fallback_parsing(html_content)
+    
+    @staticmethod
+    def html_fallback_parsing(html_content):
+        """Geliştirilmiş HTML fallback parsing"""
+        try:
+            print("🔍 Geliştirilmiş HTML parsing başlatılıyor...")
+            
+            product_info = {
+                'title': 'Bilgi bulunamadı',
+                'price': 'Bilgi bulunamadı', 
+                'image': 'Bilgi bulunamadı',
+                'rating': 'HTML parse',
+                'sold_count': 'HTML parse'
             }
-
-class AliExpressBotUltimate:
-    def __init__(self, web_mode=False, scrape_do_token=None, anticaptcha_key=None):
-        self.sonuclar = []
-        self.basarili = 0
-        self.basarisiz = 0
-        self.scrape_do_kullanim = 0
-        self.web_mode = web_mode
-        self.running = False
-        self.current_progress = ""
-        
-        # API services
-        self.scrape_do = ScrapeDoAPI(scrape_do_token) if scrape_do_token else None
-        self.anticaptcha = AntiCaptchaAPI(anticaptcha_key) if anticaptcha_key else None
-        self.parser = AliExpressParser()
-        
-        if self.scrape_do:
-            self.log("✅ Scrape.do API aktif")
-        if self.anticaptcha:
-            balance = self.anticaptcha.get_balance()
-            if balance:
-                self.log(f"✅ Anti-Captcha aktif, bakiye: ${balance}")
-        
-    def log(self, message):
-        """Loglama sistemi"""
-        timestamp = datetime.now().strftime('%H:%M:%S')
-        log_msg = f"[{timestamp}] {message}"
-        print(log_msg)
-        self.current_progress = log_msg
-    
-    def scrape_with_scrape_do(self, url):
-        """Scrape.do ile veri çekme"""
-        try:
-            self.log("🌐 Scrape.do ile sayfa çekiliyor...")
             
-            html_content = self.scrape_do.scrape_aliexpress(url)
-            
-            if html_content:
-                self.scrape_do_kullanim += 1
-                self.log("✅ Scrape.do HTML alındı, JSON parsing...")
-                
-                json_data = self.parser.extract_json_data(html_content)
-                
-                if json_data:
-                    self.log("✅ JSON data bulundu, parsing...")
-                    product_info = self.parser.parse_product_data(json_data, html_content)
-                    
-                    sonuc = {
-                        'Link': url,
-                        'Ürün Adı': product_info['title'],
-                        'Fiyat': product_info['price'],
-                        'Resim URL': product_info['image'],
-                        'Rating': product_info['rating'],
-                        'Satış Sayısı': product_info['sold_count'],
-                        'Method': 'Scrape.do + JSON',
-                        'Durum': 'Başarılı',
-                        'Timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    }
-                    
-                    return sonuc
-                else:
-                    self.log("⚠️ JSON data bulunamadı, HTML fallback...")
-                    return self.parse_html_fallback(url, html_content)
-            else:
-                self.log("❌ Scrape.do başarısız")
-                return None
-                
-        except Exception as e:
-            self.log(f"❌ Scrape.do hatası: {e}")
-            return None
-    
-    def parse_html_fallback(self, url, html_content):
-        """HTML parsing fallback"""
-        try:
-            self.log("🔍 HTML fallback parsing...")
-            
-            title_match = re.search(r'<title[^>]*>([^<]+)</title>', html_content, re.IGNORECASE)
-            title = title_match.group(1).strip()[:200] if title_match else 'Bilgi bulunamadı'
-            
-            price_patterns = [
-                r'US\s*\$\s*[\d,.]+',
-                r'[\$€£¥₹₽]\s*[\d,.]+',
+            # BAŞLIK - HTML'den
+            title_patterns = [
+                r'<title[^>]*>([^<]+)</title>',
+                r'<h1[^>]*>([^<]+)</h1>',
+                r'"product.*?title"\s*:\s*"([^"]+)"',
+                r'"subject"\s*:\s*"([^"]+)"',
+                r'property="og:title"\s+content="([^"]+)"'
             ]
             
-            price = 'Bilgi bulunamadı'
+            for pattern in title_patterns:
+                try:
+                    match = re.search(pattern, html_content, re.IGNORECASE | re.DOTALL)
+                    if match:
+                        title = match.group(1).strip()
+                        if len(title) > 10 and 'AliExpress' not in title and 'Error' not in title:
+                            product_info['title'] = title[:200]
+                            print(f"✅ HTML Title bulundu: {title[:50]}...")
+                            break
+                except:
+                    continue
+            
+            # FİYAT - HTML'den gelişmiş arama
+            price_patterns = [
+                r'"formatedPrice"\s*:\s*"([^"]+)"',
+                r'"price"\s*:\s*"([^"]+)"',
+                r'US\s*\$\s*([\d,.]+)',
+                r'\$\s*([\d,.]+)',
+                r'USD\s*([\d,.]+)',
+                r'€\s*([\d,.]+)',
+                r'£\s*([\d,.]+)',
+                r'price[^>]*>.*?\$([^<]+)',
+                r'class="[^"]*price[^"]*"[^>]*>.*?\$([^<]+)',
+                r'data-[^=]*price[^=]*="[^"]*\$([^"]+)"'
+            ]
+            
             for pattern in price_patterns:
-                price_match = re.search(pattern, html_content)
-                if price_match:
-                    price = price_match.group(0)
-                    break
+                try:
+                    matches = re.findall(pattern, html_content, re.IGNORECASE)
+                    for match in matches:
+                        match = match.strip()
+                        if match and match != '1' and match != '0' and len(match) > 1:
+                            # $ işareti yoksa ekle
+                            if not any(char in match for char in ['$', '€', '£', '¥']):
+                                match = '$' + match
+                            product_info['price'] = match
+                            print(f"✅ HTML Price bulundu: {match}")
+                            break
+                    if product_info['price'] != 'Bilgi bulunamadı':
+                        break
+                except:
+                    continue
             
+            # RESİM - HTML'den
+            image_patterns = [
+                r'"imagePathList"\s*:\s*\[\s*"([^"]+)"',
+                r'"image"\s*:\s*"([^"]+)"',
+                r'<img[^>]+src="([^"]*alicdn[^"]*)"',
+                r'<img[^>]+src="([^"]*aliexpress[^"]*)"',
+                r'property="og:image"\s+content="([^"]+)"',
+                r'src="(https://[^"]*ae[0-9]+\.alicdn\.com[^"]*)"'
+            ]
+            
+            for pattern in image_patterns:
+                try:
+                    match = re.search(pattern, html_content, re.IGNORECASE)
+                    if match:
+                        image = match.group(1)
+                        if 'http' in image:
+                            if not image.startswith('http'):
+                                if image.startswith('//'):
+                                    image = 'https:' + image
+                                else:
+                                    image = 'https:' + image
+                            product_info['image'] = image
+                            print(f"✅ HTML Image bulundu: {image[:50]}...")
+                            break
+                except:
+                    continue
+            
+            print(f"📋 HTML Fallback result: {product_info}")
+            return product_info
+            
+        except Exception as e:
+            print(f"❌ HTML fallback hatası: {e}")
             return {
-                'Link': url,
-                'Ürün Adı': title,
-                'Fiyat': price,
-                'Resim URL': 'HTML parse',
-                'Rating': 'HTML parse',
-                'Satış Sayısı': 'HTML parse',
-                'Method': 'Scrape.do + HTML',
-                'Durum': 'Kısmi başarılı',
-                'Timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                'title': 'HTML parse hatası',
+                'price': 'HTML parse hatası', 
+                'image': 'HTML parse hatası',
+                'rating': 'HTML parse hatası',
+                'sold_count': 'HTML parse hatası'
             }
-            
-        except Exception as e:
-            self.log(f"❌ HTML fallback hatası: {e}")
-            return None
-    
-    def scrape_product(self, url):
-        """Ultimate scraping method"""
-        try:
-            # Method 1: Scrape.do (Primary)
-            if self.scrape_do:
-                result = self.scrape_with_scrape_do(url)
-                if result and result.get('Durum') in ['Başarılı', 'Kısmi başarılı']:
-                    return result
-            
-            # Method 2: Simple requests fallback
-            self.log("🌐 Simple requests fallback...")
-            response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=30)
-            if response.status_code == 200:
-                return self.parse_html_fallback(url, response.text)
-            
-            return None
-            
-        except Exception as e:
-            self.log(f"❌ Scraping hatası: {e}")
-            return None
-    
-    def run_bot(self, linkler):
-        """Ultimate bot çalıştırma"""
-        try:
-            self.running = True
-            self.log("🚀 AliExpress Ultimate Bot başlatılıyor!")
-            self.log(f"📊 {len(linkler)} ürün işlenecek")
-            
-            for i, link in enumerate(linkler, 1):
-                if not self.running:
-                    break
-                    
-                self.log(f"🔄 Ürün {i}/{len(linkler)} işleniyor...")
-                
-                sonuc = self.scrape_product(link)
-                
-                if sonuc:
-                    self.sonuclar.append(sonuc)
-                    self.basarili += 1
-                    self.log(f"✅ Başarılı: {sonuc.get('Method', 'Unknown')}")
-                else:
-                    self.basarisiz += 1
-                    self.log(f"❌ Başarısız")
-                
-                self.log(f"📊 Başarılı: {self.basarili}, Başarısız: {self.basarisiz}")
-                
-                if i < len(linkler):
-                    time.sleep(random.uniform(1, 3))
-            
-            self.log("🏁 Ultimate bot tamamlandı!")
-            return True
-            
-        except Exception as e:
-            self.log(f"❌ Bot hatası: {e}")
-            return False
-        finally:
-            self.running = False
-
-# Global bot instance
-bot_instance = None
-bot_status = {
-    "running": False,
-    "progress": "",
-    "results": [],
-    "stats": {"basarili": 0, "basarisiz": 0, "scrape_do": 0}
-}
-
-# Global uploaded URLs
-uploaded_urls = []
-
-# Environment variables
-SCRAPE_DO_TOKEN = os.getenv('SCRAPE_DO_TOKEN', '4043dcdf1fbd4a7d8b370f0bb6bf94715f2c0d51771')
-ANTICAPTCHA_API_KEY = os.getenv('ANTICAPTCHA_API_KEY')
-
-# Web arayüzü HTML
-WEB_TEMPLATE = '''
-<!DOCTYPE html>
-<html>
-<head>
-    <title>AliExpress Ultimate Bot - Working Edition</title>
-    <meta charset="utf-8">
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            margin: 20px; 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-            color: #333; 
-        }
-        .container { 
-            max-width: 1000px; 
-            margin: 0 auto; 
-            background: white; 
-            padding: 30px; 
-            border-radius: 15px; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1); 
-        }
-        .header { text-align: center; margin-bottom: 30px; }
-        .status { 
-            background: #f8f9fa; 
-            padding: 20px; 
-            border-radius: 10px; 
-            margin: 20px 0; 
-            border-left: 5px solid #28a745; 
-        }
-        .running { border-left-color: #ffc107; background: #fff3cd; }
-        .btn { 
-            display: inline-block; 
-            padding: 12px 24px; 
-            margin: 8px; 
-            background: #007bff; 
-            color: white; 
-            text-decoration: none; 
-            border-radius: 8px; 
-            border: none; 
-            cursor: pointer; 
-            font-weight: bold; 
-        }
-        .btn:hover { background: #0056b3; }
-        .btn:disabled { background: #6c757d; cursor: not-allowed; }
-        .btn.success { background: #28a745; }
-        .btn.warning { background: #ffc107; color: #212529; }
-        .btn.danger { background: #dc3545; }
-        .btn.info { background: #17a2b8; }
-        .results { 
-            background: #f8f9fa; 
-            padding: 15px; 
-            border-radius: 8px; 
-            margin: 15px 0; 
-            max-height: 500px; 
-            overflow-y: auto; 
-        }
-        textarea { 
-            width: 100%; 
-            height: 120px; 
-            margin: 10px 0; 
-            padding: 10px; 
-            border: 1px solid #ddd; 
-            border-radius: 5px; 
-            font-family: monospace; 
-        }
-        .progress { 
-            background: #e9ecef; 
-            padding: 10px; 
-            border-radius: 5px; 
-            margin: 10px 0; 
-            font-family: monospace; 
-            font-size: 12px; 
-        }
-        .stats { 
-            display: grid; 
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); 
-            gap: 15px; 
-            margin: 20px 0; 
-        }
-        .stat-card { 
-            background: #f8f9fa; 
-            padding: 15px; 
-            border-radius: 8px; 
-            text-align: center; 
-        }
-        .upload-area { 
-            background: #f8f9fa; 
-            padding: 20px; 
-            border-radius: 8px; 
-            margin: 15px 0; 
-            border: 2px dashed #ddd; 
-            text-align: center; 
-        }
-        .upload-area:hover { border-color: #007bff; background: #e3f2fd; }
-        input[type="file"] { margin: 10px 0; }
-        .method-badge { 
-            padding: 3px 8px; 
-            border-radius: 12px; 
-            font-size: 11px; 
-            font-weight: bold; 
-        }
-        .method-scrapedo { background: #e8f5e8; color: #2e7d32; }
-        .method-simple { background: #fce4ec; color: #c2185b; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🚀 AliExpress Ultimate Bot</h1>
-            <h2>Working Edition - Scrape.do + Excel + Export</h2>
-            <p>🎯 Professional scraping system</p>
-        </div>
-
-        <div class="status {{ 'running' if bot_running else '' }}">
-            <h3>{{ '🔄 Ultimate Bot Çalışıyor...' if bot_running else '✅ Ultimate Bot Hazır' }}</h3>
-            <p><strong>Durum:</strong> {{ 'Professional scraping aktif' if bot_running else 'Beklemede' }}</p>
-            <p><strong>Son Güncelleme:</strong> {{ datetime.now().strftime('%H:%M:%S') }}</p>
-            <p><strong>Scrape.do:</strong> {{ '✅ Aktif' if scrape_do_active else '❌ Token gerekli' }}</p>
-            <p><strong>Anti-Captcha:</strong> {{ ('✅ $' + anticaptcha_balance) if anticaptcha_balance else '❌ Key gerekli' }}</p>
-        </div>
-
-        <div class="stats">
-            <div class="stat-card">
-                <h4>✅ Başarılı</h4>
-                <h2>{{ stats.basarili }}</h2>
-            </div>
-            <div class="stat-card">
-                <h4>❌ Başarısız</h4>
-                <h2>{{ stats.basarisiz }}</h2>
-            </div>
-            <div class="stat-card">
-                <h4>🌐 Scrape.do</h4>
-                <h2>{{ stats.scrape_do }}</h2>
-            </div>
-            <div class="stat-card">
-                <h4>🎯 Başarı %</h4>
-                <h2>{{ '%.1f%%' % ((stats.basarili / (stats.basarili + stats.basarisiz)) * 100) if (stats.basarili + stats.basarisiz) > 0 else '0%' }}</h2>
-            </div>
-        </div>
-
-        <h3>🔧 Bot Kontrolleri</h3>
-        <button onclick="runBot()" class="btn success" id="start_btn" {{ 'disabled' if bot_running else '' }}>
-            🚀 {{ 'Ultimate Bot Çalışıyor...' if bot_running else 'Ultimate Bot Başlat' }}
-        </button>
-        <button onclick="stopBot()" class="btn danger" id="stop_btn">⏹️ Bot Durdur</button>
-        <button onclick="downloadExcel()" class="btn info" id="excel_btn">📊 Excel İndir</button>
-        <button onclick="clearResults()" class="btn warning" id="clear_btn">🗑️ Temizle</button>
-
-        <h3>📁 Excel Dosyası Yükle</h3>
-        <div class="upload-area">
-            <p>📋 Excel dosyanızı buraya sürükleyin veya seçin</p>
-            <p><small>Dosya formatı: Excel (.xlsx) - URL sütunu otomatik bulunur</small></p>
-            <input type="file" id="excel_file" accept=".xlsx,.xls" onchange="uploadExcel()">
-            <div id="upload_status"></div>
-        </div>
-
-        <h3>📝 Manuel URL Girişi</h3>
-        <textarea id="test_urls" placeholder="AliExpress URL'lerini buraya yapıştırın (her satıra bir URL)...">
-https://www.aliexpress.com/item/1005004356847433.html
-https://www.aliexpress.com/item/1005003456789012.html</textarea>
-        
-        <button onclick="processUrls()" class="btn warning">🔍 URL'leri İşle</button>
-
-        {% if progress %}
-        <div class="progress">
-            <strong>📈 Canlı Progress:</strong><br>
-            {{ progress }}
-        </div>
-        {% endif %}
-
-        <div class="results">
-            <h4>📋 Scraping Sonuçları:</h4>
-            {% if results %}
-                {% for result in results[-8:] %}
-                <div style="border-bottom: 1px solid #ddd; padding: 12px 0;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <strong>🔗 {{ result.get('Link', '')[:50] }}...</strong>
-                        <span class="method-badge method-{{ result.get('Method', '').lower().replace(' ', '').replace('.', '').replace('+', '') }}">
-                            {{ result.get('Method', 'Unknown') }}
-                        </span>
-                    </div>
-                    📝 <strong>Ürün:</strong> {{ result.get('Ürün Adı', 'N/A')[:60] }}...<br>
-                    💰 <strong>Fiyat:</strong> {{ result.get('Fiyat', 'N/A') }}<br>
-                    🖼️ <strong>Resim:</strong> {{ '✅ Var' if result.get('Resim URL') not in ['Bilgi bulunamadı', 'HTML parse'] else '❌ Yok' }}<br>
-                    ⏰ {{ result.get('Timestamp', '') }}
-                </div>
-                {% endfor %}
-            {% else %}
-                <p>Henüz sonuç yok. Bot'u başlatın!</p>
-            {% endif %}
-        </div>
-    </div>
-
-    <script>
-        function disableButton(btnId, text) {
-            const btn = document.getElementById(btnId);
-            if (btn) {
-                btn.disabled = true;
-                btn.innerText = text;
-            }
-        }
-        
-        function enableButton(btnId, text) {
-            const btn = document.getElementById(btnId);
-            if (btn) {
-                btn.disabled = false;
-                btn.innerText = text;
-            }
-        }
-        
-        function uploadExcel() {
-            const fileInput = document.getElementById('excel_file');
-            const file = fileInput.files[0];
-            
-            if (!file) return;
-            
-            if (!file.name.toLowerCase().endsWith('.xlsx') && !file.name.toLowerCase().endsWith('.xls')) {
-                alert('Lütfen Excel dosyası seçin!');
-                return;
-            }
-            
-            const formData = new FormData();
-            formData.append('excel_file', file);
-            
-            document.getElementById('upload_status').innerHTML = '📤 Dosya yükleniyor...';
-            
-            fetch('/upload-excel', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    document.getElementById('upload_status').innerHTML = 
-                        '✅ ' + data.url_count + ' URL yüklendi!<br>📋 Sütun: ' + data.column_used + '<br>🚀 Bot başlatılıyor...';
-                    
-                    setTimeout(function() {
-                        runExcelBot();
-                    }, 2000);
-                } else {
-                    document.getElementById('upload_status').innerHTML = '❌ Hata: ' + data.error;
-                }
-            })
-            .catch(function(error) {
-                document.getElementById('upload_status').innerHTML = '❌ Upload hatası: ' + error;
-            });
-        }
-        
-        function runExcelBot() {
-            disableButton('start_btn', '🚀 Excel Bot Başlatılıyor...');
-            
-            fetch('/run-excel-urls', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'}
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Excel bot başlatıldı! ' + data.url_count + ' URL işlenecek.');
-                    setTimeout(function() { location.reload(); }, 2000);
-                } else {
-                    alert('Hata: ' + data.error);
-                    enableButton('start_btn', '🚀 Ultimate Bot Başlat');
-                }
-            })
-            .catch(function(error) {
-                alert('Bağlantı hatası: ' + error);
-                enableButton('start_btn', '🚀 Ultimate Bot Başlat');
-            });
-        }
-
-        function runBot() {
-            const urls = document.getElementById('test_urls').value;
-            const urlList = urls.split('\\n').filter(function(url) {
-                return url.trim() && url.includes('aliexpress');
-            });
-            
-            if (urlList.length === 0) {
-                alert('Geçerli AliExpress URL girin!');
-                return;
-            }
-            
-            disableButton('start_btn', '🚀 Bot Başlatılıyor...');
-            
-            fetch('/run-ultimate', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({urls: urlList})
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Ultimate Bot başlatıldı! ' + urlList.length + ' URL işlenecek.');
-                    setTimeout(function() { location.reload(); }, 2000);
-                } else {
-                    alert('Hata: ' + data.error);
-                    enableButton('start_btn', '🚀 Ultimate Bot Başlat');
-                }
-            })
-            .catch(function(error) {
-                alert('Bağlantı hatası: ' + error);
-                enableButton('start_btn', '🚀 Ultimate Bot Başlat');
-            });
-        }
-
-        function stopBot() {
-            if (!confirm('Botu durdurmak istediğinizden emin misiniz?')) return;
-            
-            disableButton('stop_btn', '⏹️ Durduruluyor...');
-            
-            fetch('/stop-ultimate', {method: 'POST'})
-            .then(response => response.json())
-            .then(data => {
-                alert(data.message);
-                location.reload();
-            })
-            .catch(function(error) {
-                alert('Durdurma hatası: ' + error);
-                enableButton('stop_btn', '⏹️ Bot Durdur');
-            });
-        }
-
-        function downloadExcel() {
-            disableButton('excel_btn', '📊 Excel Hazırlanıyor...');
-            
-            const link = document.createElement('a');
-            link.href = '/download-excel';
-            link.download = 'aliexpress_sonuclar.xlsx';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            setTimeout(function() {
-                enableButton('excel_btn', '📊 Excel İndir');
-            }, 2000);
-        }
-
-        function clearResults() {
-            if (!confirm('Tüm sonuçları silmek istediğinizden emin misiniz?')) return;
-            
-            disableButton('clear_btn', '🗑️ Temizleniyor...');
-            
-            fetch('/clear-results', {method: 'POST'})
-            .then(response => response.json())
-            .then(data => {
-                alert('Sonuçlar temizlendi!');
-                location.reload();
-            })
-            .catch(function(error) {
-                alert('Temizleme hatası: ' + error);
-                enableButton('clear_btn', '🗑️ Temizle');
-            });
-        }
-
-        function processUrls() { 
-            runBot(); 
-        }
-
-        // Auto refresh
-        {% if bot_running %}
-        setTimeout(function() { location.reload(); }, 5000);
-        {% endif %}
-        
-        console.log('✅ Ultimate Bot arayüzü yüklendi - Butonlar hazır!');
-    </script>
-</body>
-</html>
-'''
-
-@app.route('/')
-def home():
-    scrape_do_active = bool(SCRAPE_DO_TOKEN)
-    anticaptcha_balance = None
-    
-    if ANTICAPTCHA_API_KEY:
-        try:
-            api = AntiCaptchaAPI(ANTICAPTCHA_API_KEY)
-            anticaptcha_balance = str(api.get_balance())
-        except:
-            pass
-    
-    return render_template_string(WEB_TEMPLATE,
-                                bot_running=bot_status["running"],
-                                progress=bot_status["progress"],
-                                results=bot_status["results"],
-                                stats=bot_status["stats"],
-                                scrape_do_active=scrape_do_active,
-                                anticaptcha_balance=anticaptcha_balance,
-                                datetime=datetime)
-
-@app.route('/upload-excel', methods=['POST'])
-def upload_excel():
-    global uploaded_urls
-    
-    try:
-        if 'excel_file' not in request.files:
-            return jsonify({"success": False, "error": "Dosya seçilmedi"})
-        
-        file = request.files['excel_file']
-        if file.filename == '':
-            return jsonify({"success": False, "error": "Dosya seçilmedi"})
-        
-        df = pd.read_excel(io.BytesIO(file.read()))
-        
-        # Link sütununu bul
-        link_column = None
-        possible_columns = ['link', 'url', 'item link', 'product link', 'aliexpress link', 
-                          'product url', 'item url', 'bağlantı', 'ürün linki']
-        
-        for col in df.columns:
-            if any(keyword in col.lower() for keyword in possible_columns):
-                link_column = col
-                break
-        
-        if link_column is None:
-            available_columns = list(df.columns)
-            return jsonify({
-                "success": False, 
-                "error": f"URL sütunu bulunamadı. Mevcut sütunlar: {', '.join(available_columns)}"
-            })
-        
-        urls = df[link_column].dropna().tolist()
-        valid_urls = [url for url in urls if isinstance(url, str) and 'aliexpress.com' in url]
-        
-        if not valid_urls:
-            return jsonify({"success": False, "error": "Geçerli AliExpress URL'si bulunamadı"})
-        
-        uploaded_urls = valid_urls
-        
-        return jsonify({
-            "success": True, 
-            "url_count": len(valid_urls),
-            "column_used": link_column,
-            "message": f"{len(valid_urls)} URL başarıyla yüklendi"
-        })
-        
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
-
-@app.route('/run-excel-urls', methods=['POST'])
-def run_excel_urls():
-    global bot_instance, bot_status, uploaded_urls
-    
-    if bot_status["running"]:
-        return jsonify({"success": False, "error": "Bot zaten çalışıyor"})
-    
-    if not uploaded_urls:
-        return jsonify({"success": False, "error": "Yüklenmiş URL yok"})
-    
-    def excel_thread():
-        global bot_instance, bot_status
-        try:
-            bot_status["running"] = True
-            bot_instance = AliExpressBotUltimate(
-                web_mode=True, 
-                scrape_do_token=SCRAPE_DO_TOKEN,
-                anticaptcha_key=ANTICAPTCHA_API_KEY
-            )
-            
-            if bot_instance.run_bot(uploaded_urls):
-                bot_status["results"] = bot_instance.sonuclar
-                bot_status["stats"] = {
-                    "basarili": bot_instance.basarili,
-                    "basarisiz": bot_instance.basarisiz,
-                    "scrape_do": bot_instance.scrape_do_kullanim
-                }
-        except Exception as e:
-            bot_status["progress"] = f"Hata: {e}"
-        finally:
-            bot_status["running"] = False
-    
-    thread = threading.Thread(target=excel_thread)
-    thread.daemon = True
-    thread.start()
-    
-    return jsonify({"success": True, "url_count": len(uploaded_urls)})
-
-@app.route('/run-ultimate', methods=['POST'])
-def run_ultimate():
-    global bot_instance, bot_status
-    
-    if bot_status["running"]:
-        return jsonify({"success": False, "error": "Bot zaten çalışıyor"})
-    
-    data = request.get_json()
-    urls = data.get('urls', [])
-    
-    if not urls:
-        return jsonify({"success": False, "error": "URL listesi boş"})
-    
-    def ultimate_thread():
-        global bot_instance, bot_status
-        try:
-            bot_status["running"] = True
-            bot_instance = AliExpressBotUltimate(
-                web_mode=True, 
-                scrape_do_token=SCRAPE_DO_TOKEN,
-                anticaptcha_key=ANTICAPTCHA_API_KEY
-            )
-            
-            if bot_instance.run_bot(urls):
-                bot_status["results"] = bot_instance.sonuclar
-                bot_status["stats"] = {
-                    "basarili": bot_instance.basarili,
-                    "basarisiz": bot_instance.basarisiz,
-                    "scrape_do": bot_instance.scrape_do_kullanim
-                }
-        except Exception as e:
-            bot_status["progress"] = f"Hata: {e}"
-        finally:
-            bot_status["running"] = False
-    
-    thread = threading.Thread(target=ultimate_thread)
-    thread.daemon = True
-    thread.start()
-    
-    return jsonify({"success": True, "message": f"Ultimate Bot başlatıldı - {len(urls)} URL işlenecek"})
-
-@app.route('/stop-ultimate', methods=['POST'])
-def stop_ultimate():
-    global bot_instance, bot_status
-    bot_status["running"] = False
-    if bot_instance:
-        bot_instance.running = False
-    return jsonify({"message": "Ultimate bot durduruldu"})
-
-@app.route('/clear-results', methods=['POST'])
-def clear_results():
-    global bot_status
-    bot_status["results"] = []
-    bot_status["stats"] = {"basarili": 0, "basarisiz": 0, "scrape_do": 0}
-    return jsonify({"message": "Sonuçlar temizlendi"})
-
-@app.route('/download-excel')
-def download_excel():
-    try:
-        if not bot_status["results"]:
-            return "Henüz sonuç yok!", 404
-        
-        df = pd.DataFrame(bot_status["results"])
-        
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='AliExpress Sonuçları', index=False)
-        
-        output.seek(0)
-        
-        return send_file(
-            output,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name=f'aliexpress_sonuclar_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
-        )
-        
-    except Exception as e:
-        return f"Excel oluşturma hatası: {e}", 500
-
-@app.route('/status')
-def status():
-    return jsonify(bot_status)
-
-@app.route('/health')
-def health():
-    return jsonify({
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "ultimate_bot": "active",
-        "scrape_do": "integrated",
-        "excel_upload": "ready",
-        "railway": True,
-        "bot_ready": True
-    })
-
-if __name__ == '__main__':
-    print(f"🚀 AliExpress Complete Ultimate Bot")
-    print(f"🌐 Port: {PORT}")
-    print(f"🌐 Scrape.do: {'✅ Aktif' if SCRAPE_DO_TOKEN else '❌ Token gerekli'}")
-    print(f"🤖 Anti-Captcha: {'✅ Aktif' if ANTICAPTCHA_API_KEY else '❌ Key gerekli'}")
-    print(f"📊 Excel Upload/Download: ✅ Aktif")
-    
-    app.run(host='0.0.0.0', port=PORT, debug=False, threaded=True)

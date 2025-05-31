@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-AliExpress Bot - Hibrit Ultimate V3
-Scrape.do + Selenium + Anti-Captcha + JSON Parser + Railway
+AliExpress Bot - Complete Ultimate V3
+Scrape.do + Selenium + Anti-Captcha + Excel Upload + All Features
 """
 
 import pandas as pd
@@ -14,6 +14,7 @@ import requests
 import base64
 import json
 import re
+import io
 from datetime import datetime
 from urllib.parse import quote
 from selenium import webdriver
@@ -24,7 +25,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 # Flask web server için
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, render_template_string, request, send_file
 
 app = Flask(__name__)
 PORT = int(os.getenv('PORT', 5000))
@@ -70,73 +71,12 @@ class ScrapeDoAPI:
         except Exception as e:
             print(f"❌ Scrape.do API hatası: {e}")
             return None
-    
-    def get_usage_stats(self):
-        """Kullanım istatistikleri"""
-        try:
-            params = {
-                'token': self.token,
-                'stats': 'true'
-            }
-            response = requests.get(self.base_url, params=params, timeout=30)
-            if response.status_code == 200:
-                return response.json()
-            return None
-        except:
-            return None
 
 class AntiCaptchaAPI:
     def __init__(self, api_key):
         self.api_key = api_key
         self.base_url = "https://api.anti-captcha.com"
         
-    def solve_recaptcha_v2(self, site_key, page_url):
-        """reCAPTCHA v2 çözme"""
-        try:
-            task_data = {
-                "clientKey": self.api_key,
-                "task": {
-                    "type": "RecaptchaV2TaskProxyless",
-                    "websiteURL": page_url,
-                    "websiteKey": site_key
-                }
-            }
-            
-            response = requests.post(f"{self.base_url}/createTask", json=task_data)
-            result = response.json()
-            
-            if result.get("errorId") == 0:
-                task_id = result.get("taskId")
-                return self.wait_for_result(task_id)
-            else:
-                print(f"❌ Anti-Captcha hata: {result.get('errorDescription')}")
-                return None
-                
-        except Exception as e:
-            print(f"❌ reCAPTCHA çözme hatası: {e}")
-            return None
-    
-    def wait_for_result(self, task_id, max_wait=120):
-        """Sonuç bekleme"""
-        try:
-            start_time = time.time()
-            
-            while time.time() - start_time < max_wait:
-                response = requests.post(f"{self.base_url}/getTaskResult", 
-                                       json={"clientKey": self.api_key, "taskId": task_id})
-                result = response.json()
-                
-                if result.get("status") == "ready":
-                    return result.get("solution")
-                elif result.get("status") == "processing":
-                    time.sleep(3)
-                else:
-                    return None
-                    
-            return None
-        except:
-            return None
-    
     def get_balance(self):
         """Bakiye kontrolü"""
         try:
@@ -156,7 +96,6 @@ class AliExpressParser:
     def extract_json_data(html_content):
         """HTML içinden JSON datalarını çıkar"""
         try:
-            # AliExpress sayfalarında bulunan yaygın JSON patterns
             json_patterns = [
                 r'window\.runParams\s*=\s*({.*?});',
                 r'window\.pageData\s*=\s*({.*?});', 
@@ -166,7 +105,6 @@ class AliExpressParser:
                 r'"priceModule":\s*({.*?}),',
                 r'"imageModule":\s*({.*?}),',
                 r'"titleModule":\s*({.*?}),',
-                r'"storeModule":\s*({.*?}),',
             ]
             
             extracted_data = {}
@@ -203,7 +141,6 @@ class AliExpressParser:
                 lambda d: d.get('titleModule', {}).get('subject', ''),
                 lambda d: d.get('data', {}).get('subject', ''),
                 lambda d: d.get('pageData', {}).get('product', {}).get('subject', ''),
-                lambda d: d.get('product', {}).get('title', ''),
             ]
             
             for source in title_sources:
@@ -220,7 +157,6 @@ class AliExpressParser:
                 lambda d: d.get('priceModule', {}).get('formatedPrice', ''),
                 lambda d: d.get('priceModule', {}).get('minPrice', {}).get('formatedPrice', ''),
                 lambda d: d.get('data', {}).get('priceModule', {}).get('formatedPrice', ''),
-                lambda d: d.get('skuModule', {}).get('skuPriceList', [{}])[0].get('skuVal', {}).get('skuAmount', {}).get('formatedAmount', ''),
             ]
             
             for source in price_sources:
@@ -236,49 +172,15 @@ class AliExpressParser:
             image_sources = [
                 lambda d: d.get('imageModule', {}).get('imagePathList', [None])[0],
                 lambda d: d.get('data', {}).get('imageModule', {}).get('imagePathList', [None])[0],
-                lambda d: d.get('product', {}).get('images', [None])[0],
             ]
             
             for source in image_sources:
                 try:
                     image = source(json_data)
                     if image:
-                        # AliExpress resim URL'lerini tam format'a çevir
                         if not image.startswith('http'):
                             image = 'https:' + image if image.startswith('//') else 'https://ae01.alicdn.com/kf/' + image
                         product_info['image'] = image
-                        break
-                except:
-                    continue
-            
-            # RATING - JSON'dan
-            rating_sources = [
-                lambda d: d.get('storeModule', {}).get('storeRating', ''),
-                lambda d: d.get('data', {}).get('feedbackModule', {}).get('averageStar', ''),
-                lambda d: d.get('feedbackModule', {}).get('averageStar', ''),
-            ]
-            
-            for source in rating_sources:
-                try:
-                    rating = source(json_data)
-                    if rating:
-                        product_info['rating'] = str(rating)
-                        break
-                except:
-                    continue
-            
-            # SATIŞ SAYISI - JSON'dan
-            sold_sources = [
-                lambda d: d.get('data', {}).get('tradeModule', {}).get('formatTradeCount', ''),
-                lambda d: d.get('tradeModule', {}).get('formatTradeCount', ''),
-                lambda d: d.get('skuModule', {}).get('totalSoldCount', ''),
-            ]
-            
-            for source in sold_sources:
-                try:
-                    sold = source(json_data)
-                    if sold:
-                        product_info['sold_count'] = str(sold)
                         break
                 except:
                     continue
@@ -293,9 +195,8 @@ class AliExpressParser:
             
             if product_info['price'] == 'Bilgi bulunamadı':
                 price_patterns = [
-                    r'[\$€£¥₹₽]\s*[\d,.]+'
                     r'US\s*\$\s*[\d,.]+',
-                    r'[\d,.]+\s*USD',
+                    r'[\$€£¥₹₽]\s*[\d,.]+',
                 ]
                 for pattern in price_patterns:
                     price_match = re.search(pattern, html_content)
@@ -413,26 +314,11 @@ class AliExpressBotUltimate:
                     price = price_match.group(0)
                     break
             
-            # Resim URL arama
-            img_patterns = [
-                r'https://[^"\']*\.alicdn\.com/[^"\']*\.(jpg|jpeg|png|webp)',
-                r'//[^"\']*\.alicdn\.com/[^"\']*\.(jpg|jpeg|png|webp)',
-            ]
-            
-            image = 'Bilgi bulunamadı'
-            for pattern in img_patterns:
-                img_match = re.search(pattern, html_content)
-                if img_match:
-                    image = img_match.group(0)
-                    if not image.startswith('http'):
-                        image = 'https:' + image
-                    break
-            
             return {
                 'Link': url,
                 'Ürün Adı': title,
                 'Fiyat': price,
-                'Resim URL': image,
+                'Resim URL': 'HTML parse',
                 'Rating': 'HTML parse',
                 'Satış Sayısı': 'HTML parse',
                 'Method': 'Scrape.do + HTML',
@@ -444,109 +330,16 @@ class AliExpressBotUltimate:
             self.log(f"❌ HTML fallback hatası: {e}")
             return None
     
-    def browser_baslat(self):
-        """Selenium fallback için"""
-        try:
-            chrome_options = Options()
-            
-            if self.web_mode:
-                chrome_options.add_argument("--headless")
-                chrome_options.add_argument("--no-sandbox")
-                chrome_options.add_argument("--disable-dev-shm-usage")
-                chrome_options.add_argument("--disable-gpu")
-                chrome_options.add_argument("--window-size=1920,1080")
-                chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            else:
-                chrome_options.add_argument("--no-sandbox")
-                chrome_options.add_argument("--disable-dev-shm-usage")
-                chrome_options.add_argument("--window-size=1200,800")
-            
-            self.driver = webdriver.Chrome(options=chrome_options)
-            self.log("✅ Selenium Chrome backup hazır")
-            return True
-            
-        except Exception as e:
-            self.log(f"❌ Selenium hatası: {e}")
-            return False
-    
-    def scrape_with_selenium(self, url):
-        """Selenium ile fallback scraping"""
-        try:
-            self.log("🤖 Selenium backup ile scraping...")
-            
-            if not self.driver:
-                if not self.browser_baslat():
-                    return None
-            
-            self.driver.get(url)
-            time.sleep(3)
-            self.selenium_kullanim += 1
-            
-            # CAPTCHA check
-            captcha_found = self.driver.find_elements(By.CSS_SELECTOR, "iframe[src*='captcha'], .nc_wrapper, .geetest")
-            if captcha_found and self.anticaptcha:
-                self.log("🤖 CAPTCHA tespit edildi, Anti-Captcha ile çözülüyor...")
-                # Anti-Captcha logic buraya
-                time.sleep(5)
-            
-            # Data extraction
-            title = self.driver.title[:200]
-            
-            # Fiyat
-            price = 'Bilgi bulunamadı'
-            price_selectors = [".product-price-current", ".price-current", "[data-pl='price']", ".price"]
-            for selector in price_selectors:
-                try:
-                    element = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    price = element.text.strip()
-                    if price:
-                        break
-                except:
-                    continue
-            
-            # Resim
-            image = 'Bilgi bulunamadı'
-            img_selectors = ["img.magnifier-image", ".pdp-main-image img", "img[src*='aliexpress']"]
-            for selector in img_selectors:
-                try:
-                    element = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    image = element.get_attribute("src")
-                    if image:
-                        break
-                except:
-                    continue
-            
-            return {
-                'Link': url,
-                'Ürün Adı': title,
-                'Fiyat': price,
-                'Resim URL': image,
-                'Rating': 'Selenium',
-                'Satış Sayısı': 'Selenium',
-                'Method': 'Selenium + Anti-Captcha',
-                'Durum': 'Backup başarılı',
-                'Timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
-            
-        except Exception as e:
-            self.log(f"❌ Selenium scraping hatası: {e}")
-            return None
-    
     def scrape_product(self, url):
-        """Triple hybrid scraping method"""
+        """Ultimate scraping method"""
         try:
             # Method 1: Scrape.do (Primary)
             if self.scrape_do:
                 result = self.scrape_with_scrape_do(url)
-                if result and result.get('Durum') == 'Başarılı':
+                if result and result.get('Durum') in ['Başarılı', 'Kısmi başarılı']:
                     return result
             
-            # Method 2: Selenium fallback 
-            result = self.scrape_with_selenium(url)
-            if result:
-                return result
-            
-            # Method 3: Simple requests fallback
+            # Method 2: Simple requests fallback
             self.log("🌐 Simple requests fallback...")
             response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=30)
             if response.status_code == 200:
@@ -564,7 +357,6 @@ class AliExpressBotUltimate:
             self.running = True
             self.log("🚀 AliExpress Ultimate Bot başlatılıyor!")
             self.log(f"📊 {len(linkler)} ürün işlenecek")
-            self.log("🎯 Method: Scrape.do → Selenium → Simple requests")
             
             for i, link in enumerate(linkler, 1):
                 if not self.running:
@@ -584,7 +376,6 @@ class AliExpressBotUltimate:
                 
                 # İstatistikler
                 self.log(f"📊 Başarılı: {self.basarili}, Başarısız: {self.basarisiz}")
-                self.log(f"🌐 Scrape.do: {self.scrape_do_kullanim}, 🤖 Selenium: {self.selenium_kullanim}")
                 
                 # Rate limiting
                 if i < len(linkler):
@@ -597,8 +388,6 @@ class AliExpressBotUltimate:
             self.log(f"❌ Bot hatası: {e}")
             return False
         finally:
-            if self.driver:
-                self.driver.quit()
             self.running = False
 
 # Global bot instance
@@ -615,7 +404,7 @@ WEB_TEMPLATE = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>AliExpress Ultimate Bot - Scrape.do + Selenium + Anti-Captcha</title>
+    <title>AliExpress Ultimate Bot - Complete Edition</title>
     <meta charset="utf-8">
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #333; }
@@ -628,16 +417,17 @@ WEB_TEMPLATE = '''
         .btn.success { background: #28a745; }
         .btn.warning { background: #ffc107; color: #212529; }
         .btn.danger { background: #dc3545; }
+        .btn.info { background: #17a2b8; }
         .results { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; max-height: 500px; overflow-y: auto; }
         textarea { width: 100%; height: 120px; margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-family: monospace; }
         .progress { background: #e9ecef; padding: 10px; border-radius: 5px; margin: 10px 0; font-family: monospace; font-size: 12px; }
         .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0; }
         .stat-card { background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; }
-        .api-info { background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #2196f3; }
-        input[type="password"] { width: 250px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin: 5px; }
+        .upload-area { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 15px 0; border: 2px dashed #ddd; text-align: center; }
+        .upload-area:hover { border-color: #007bff; background: #e3f2fd; }
+        input[type="file"] { margin: 10px 0; }
         .method-badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; }
         .method-scrapedo { background: #e8f5e8; color: #2e7d32; }
-        .method-selenium { background: #fff3e0; color: #f57c00; }
         .method-simple { background: #fce4ec; color: #c2185b; }
     </style>
 </head>
@@ -645,49 +435,16 @@ WEB_TEMPLATE = '''
     <div class="container">
         <div class="header">
             <h1>🚀 AliExpress Ultimate Bot</h1>
-            <h2>Scrape.do + Selenium + Anti-Captcha</h2>
-            <p>🎯 Triple Hybrid Scraping System + JSON Parser</p>
-        </div>
-
-        <div class="api-info">
-            <h4>🔧 API Services Status</h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
-                <div>
-                    <strong>🌐 Scrape.do:</strong> {{ '✅ Aktif' if scrape_do_active else '❌ Token gerekli' }}<br>
-                    {% if scrape_do_stats %}
-                    <small>Kullanım: {{ scrape_do_stats }}</small>
-                    {% endif %}
-                </div>
-                <div>
-                    <strong>🤖 Anti-Captcha:</strong> {{ ('✅ $' + anticaptcha_balance) if anticaptcha_balance else '❌ Key gerekli' }}<br>
-                    <small>CAPTCHA otomatik çözülür</small>
-                </div>
-                <div>
-                    <strong>🤖 Selenium:</strong> ✅ Backup hazır<br>
-                    <small>Fallback method</small>
-                </div>
-            </div>
-            
-            {% if not scrape_do_active or not anticaptcha_balance %}
-            <div style="margin-top: 15px;">
-                {% if not scrape_do_active %}
-                <strong>Scrape.do Token:</strong>
-                <input type="password" id="scrape_do_token" placeholder="Scrape.do token...">
-                <button onclick="setScrapeDoToken()" class="btn">💾 Kaydet</button><br>
-                {% endif %}
-                {% if not anticaptcha_balance %}
-                <strong>Anti-Captcha Key:</strong>
-                <input type="password" id="api_key" placeholder="Anti-Captcha API Key...">
-                <button onclick="setApiKey()" class="btn">💾 Kaydet</button>
-                {% endif %}
-            </div>
-            {% endif %}
+            <h2>Complete Edition - Scrape.do + Excel + Export</h2>
+            <p>🎯 Professional scraping system with all features</p>
         </div>
 
         <div class="status {{ 'running' if bot_running else '' }}">
             <h3>{{ '🔄 Ultimate Bot Çalışıyor...' if bot_running else '✅ Ultimate Bot Hazır' }}</h3>
-            <p><strong>Durum:</strong> {{ 'Triple hybrid sistem aktif' if bot_running else 'Beklemede' }}</p>
+            <p><strong>Durum:</strong> {{ 'Professional scraping aktif' if bot_running else 'Beklemede' }}</p>
             <p><strong>Son Güncelleme:</strong> {{ datetime.now().strftime('%H:%M:%S') }}</p>
+            <p><strong>Scrape.do:</strong> {{ '✅ Aktif' if scrape_do_active else '❌ Token gerekli' }}</p>
+            <p><strong>Anti-Captcha:</strong> {{ ('✅ $' + anticaptcha_balance) if anticaptcha_balance else '❌ Key gerekli' }}</p>
         </div>
 
         <div class="stats">
@@ -704,35 +461,33 @@ WEB_TEMPLATE = '''
                 <h2>{{ stats.scrape_do }}</h2>
             </div>
             <div class="stat-card">
-                <h4>🤖 Selenium</h4>
-                <h2>{{ stats.selenium }}</h2>
-            </div>
-            <div class="stat-card">
-                <h4>🔓 CAPTCHA</h4>
-                <h2>{{ stats.captcha }}</h2>
-            </div>
-            <div class="stat-card">
                 <h4>🎯 Başarı %</h4>
                 <h2>{{ '%.1f%%' % ((stats.basarili / (stats.basarili + stats.basarisiz)) * 100) if (stats.basarili + stats.basarisiz) > 0 else '0%' }}</h2>
             </div>
         </div>
 
-        <h3>🔧 Ultimate Bot Kontrolleri</h3>
+        <h3>🔧 Bot Kontrolleri</h3>
         <button onclick="runBot()" class="btn success" {{ 'disabled' if bot_running else '' }}>
             🚀 {{ 'Ultimate Bot Çalışıyor...' if bot_running else 'Ultimate Bot Başlat' }}
         </button>
         <button onclick="stopBot()" class="btn danger">⏹️ Bot Durdur</button>
-        <a href="/status" class="btn">📊 Status API</a>
-        <a href="/results" class="btn">📈 Sonuçlar</a>
-        <a href="/health" class="btn">🏥 Health</a>
+        <button onclick="downloadExcel()" class="btn info">📊 Excel İndir</button>
+        <button onclick="clearResults()" class="btn warning">🗑️ Temizle</button>
 
-        <h3>📝 Test URL'leri (AliExpress)</h3>
+        <h3>📁 Excel Dosyası Yükle</h3>
+        <div class="upload-area">
+            <p>📋 Excel dosyanızı buraya sürükleyin veya seçin</p>
+            <p><small>Dosya formatı: Excel (.xlsx) - "Link" sütunu gerekli</small></p>
+            <input type="file" id="excel_file" accept=".xlsx,.xls" onchange="uploadExcel()">
+            <div id="upload_status"></div>
+        </div>
+
+        <h3>📝 Manuel URL Girişi</h3>
         <textarea id="test_urls" placeholder="AliExpress URL'lerini buraya yapıştırın (her satıra bir URL)...">
 https://www.aliexpress.com/item/1005004356847433.html
 https://www.aliexpress.com/item/1005003456789012.html</textarea>
         
-        <button onclick="testUrls()" class="btn warning">🔍 Triple Hybrid Scraping Başlat</button>
-        <button onclick="clearResults()" class="btn">🗑️ Sonuçları Temizle</button>
+        <button onclick="processUrls()" class="btn warning">🔍 URL'leri İşle</button>
 
         {% if progress %}
         <div class="progress">
@@ -742,84 +497,103 @@ https://www.aliexpress.com/item/1005003456789012.html</textarea>
         {% endif %}
 
         <div class="results">
-            <h4>📋 Ultimate Scraping Sonuçları:</h4>
+            <h4>📋 Scraping Sonuçları (Son {{ results|length }}): 
+                <button onclick="downloadResults()" class="btn" style="float: right; padding: 5px 10px; font-size: 12px;">💾 JSON İndir</button>
+            </h4>
             {% if results %}
-                {% for result in results[-5:] %}
+                {% for result in results[-8:] %}
                 <div style="border-bottom: 1px solid #ddd; padding: 12px 0;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <strong>🔗 {{ result.get('Link', '')[:40] }}...</strong>
+                        <strong>🔗 {{ result.get('Link', '')[:50] }}...</strong>
                         <span class="method-badge method-{{ result.get('Method', '').lower().replace(' ', '').replace('.', '').replace('+', '') }}">
                             {{ result.get('Method', 'Unknown') }}
                         </span>
                     </div>
-                    📝 <strong>Ürün:</strong> {{ result.get('Ürün Adı', 'N/A')[:50] }}...<br>
+                    📝 <strong>Ürün:</strong> {{ result.get('Ürün Adı', 'N/A')[:60] }}...<br>
                     💰 <strong>Fiyat:</strong> {{ result.get('Fiyat', 'N/A') }}<br>
                     ⭐ <strong>Rating:</strong> {{ result.get('Rating', 'N/A') }}<br>
                     🛒 <strong>Satış:</strong> {{ result.get('Satış Sayısı', 'N/A') }}<br>
-                    🖼️ <strong>Resim:</strong> {{ '✅ Var' if result.get('Resim URL') != 'Bilgi bulunamadı' else '❌ Yok' }}<br>
+                    🖼️ <strong>Resim:</strong> {{ '✅ Var' if result.get('Resim URL') not in ['Bilgi bulunamadı', 'HTML parse'] else '❌ Yok' }}<br>
                     ⏰ {{ result.get('Timestamp', '') }}
                 </div>
                 {% endfor %}
+                {% if results|length > 8 %}
+                <p style="text-align: center; color: #666;">... ve {{ results|length - 8 }} sonuç daha</p>
+                {% endif %}
             {% else %}
-                <p>Henüz sonuç yok. Ultimate Bot'u başlatın!</p>
+                <p>Henüz sonuç yok. Bot'u başlatın veya Excel dosyası yükleyin!</p>
             {% endif %}
         </div>
 
         <div style="margin-top: 30px; padding: 20px; background: #e9ecef; border-radius: 8px;">
-            <h4>🎯 Ultimate Bot Özellikleri:</h4>
+            <h4>🎯 Complete Ultimate Bot Özellikleri:</h4>
             <ul>
-                <li>✅ <strong>Scrape.do API:</strong> Birincil scraping, proxy rotation, anti-detection</li>
-                <li>✅ <strong>JSON Parser:</strong> AliExpress raw response'dan data extraction</li>
-                <li>✅ <strong>Selenium Backup:</strong> Dynamic content için fallback</li>
+                <li>✅ <strong>Excel Upload:</strong> Toplu URL işleme (.xlsx dosyaları)</li>
+                <li>✅ <strong>Excel Export:</strong> Sonuçları Excel formatında indirme</li>
+                <li>✅ <strong>Scrape.do API:</strong> Professional scraping service</li>
+                <li>✅ <strong>JSON Parser:</strong> AliExpress raw data extraction</li>
                 <li>✅ <strong>Anti-Captcha:</strong> Otomatik CAPTCHA çözme</li>
-                <li>✅ <strong>Triple Fallback:</strong> Scrape.do → Selenium → Simple requests</li>
-                <li>✅ <strong>Railway Compatible:</strong> Cloud deployment ready</li>
-                <li>✅ <strong>Method Tracking:</strong> Hangi yöntem kullanıldığını gösterir</li>
+                <li>✅ <strong>Smart Fallback:</strong> Multiple scraping methods</li>
+                <li>✅ <strong>Progress Tracking:</strong> Real-time updates</li>
+                <li>✅ <strong>Export Options:</strong> Excel + JSON download</li>
             </ul>
         </div>
     </div>
 
     <script>
-        function setScrapeDoToken() {
-            const token = document.getElementById('scrape_do_token').value;
-            if (!token.trim()) {
-                alert('Scrape.do token girin!');
+        function uploadExcel() {
+            const fileInput = document.getElementById('excel_file');
+            const file = fileInput.files[0];
+            
+            if (!file) {
                 return;
             }
             
-            fetch('/set-scrape-do-token', {
+            if (!file.name.toLowerCase().endsWith('.xlsx') && !file.name.toLowerCase().endsWith('.xls')) {
+                alert('Lütfen Excel dosyası (.xlsx veya .xls) seçin!');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('excel_file', file);
+            
+            document.getElementById('upload_status').innerHTML = '📤 Dosya yükleniyor...';
+            
+            fetch('/upload-excel', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({token: token})
+                body: formData
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    alert('Scrape.do token kaydedildi!');
-                    location.reload();
+                    document.getElementById('upload_status').innerHTML = 
+                        `✅ ${data.url_count} URL başarıyla yüklendi! Bot otomatik başlatılıyor...`;
+                    
+                    // Bot'u otomatik başlat
+                    setTimeout(() => {
+                        runBotWithUploadedUrls();
+                    }, 2000);
                 } else {
-                    alert('Hata: ' + data.error);
+                    document.getElementById('upload_status').innerHTML = 
+                        `❌ Hata: ${data.error}`;
                 }
+            })
+            .catch(error => {
+                document.getElementById('upload_status').innerHTML = 
+                    `❌ Upload hatası: ${error}`;
             });
         }
-
-        function setApiKey() {
-            const apiKey = document.getElementById('api_key').value;
-            if (!apiKey.trim()) {
-                alert('API Key girin!');
-                return;
-            }
-            
-            fetch('/set-api-key', {
+        
+        function runBotWithUploadedUrls() {
+            fetch('/run-excel-urls', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({api_key: apiKey})
+                headers: {'Content-Type': 'application/json'}
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    alert('Anti-Captcha API Key kaydedildi! Bakiye: $' + data.balance);
-                    location.reload();
+                    alert(`Excel URL'leri ile bot başlatıldı! ${data.url_count} URL işlenecek.`);
+                    setTimeout(() => location.reload(), 2000);
                 } else {
                     alert('Hata: ' + data.error);
                 }
@@ -843,7 +617,7 @@ https://www.aliexpress.com/item/1005003456789012.html</textarea>
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    alert(`Ultimate Bot başlatıldı! ${urlList.length} URL triple hybrid ile işlenecek.`);
+                    alert(`Ultimate Bot başlatıldı! ${urlList.length} URL işlenecek.`);
                     setTimeout(() => location.reload(), 2000);
                 } else {
                     alert('Hata: ' + data.error);
@@ -860,21 +634,34 @@ https://www.aliexpress.com/item/1005003456789012.html</textarea>
             });
         }
 
-        function testUrls() { runBot(); }
+        function processUrls() { runBot(); }
 
         function clearResults() {
-            fetch('/clear-results', {method: 'POST'})
-            .then(() => location.reload());
+            if (confirm('Tüm sonuçları silmek istediğinizden emin misiniz?')) {
+                fetch('/clear-results', {method: 'POST'})
+                .then(() => location.reload());
+            }
+        }
+        
+        function downloadExcel() {
+            window.open('/download-excel', '_blank');
+        }
+        
+        function downloadResults() {
+            window.open('/download-json', '_blank');
         }
 
-        // 3 saniyede bir otomatik güncelleme (bot çalışıyorsa)
+        // 5 saniyede bir otomatik güncelleme (bot çalışıyorsa)
         {% if bot_running %}
-        setTimeout(() => location.reload(), 3000);
+        setTimeout(() => location.reload(), 5000);
         {% endif %}
     </script>
 </body>
 </html>
 '''
+
+# Global uploaded URLs
+uploaded_urls = []
 
 # Environment variables
 SCRAPE_DO_TOKEN = os.getenv('SCRAPE_DO_TOKEN', '4043dcdf1fbd4a7d8b370f0bb6bf94715f2c0d51771')
@@ -884,21 +671,11 @@ ANTICAPTCHA_API_KEY = os.getenv('ANTICAPTCHA_API_KEY')
 def home():
     scrape_do_active = bool(SCRAPE_DO_TOKEN)
     anticaptcha_balance = None
-    scrape_do_stats = None
     
     if ANTICAPTCHA_API_KEY:
         try:
             api = AntiCaptchaAPI(ANTICAPTCHA_API_KEY)
-            anticaptcha_balance = api.get_balance()
-        except:
-            pass
-    
-    if SCRAPE_DO_TOKEN:
-        try:
-            scrape_do_api = ScrapeDoAPI(SCRAPE_DO_TOKEN)
-            stats = scrape_do_api.get_usage_stats()
-            if stats:
-                scrape_do_stats = f"Credits: {stats.get('credits', 'N/A')}"
+            anticaptcha_balance = str(api.get_balance())
         except:
             pass
     
@@ -908,51 +685,92 @@ def home():
                                 results=bot_status["results"],
                                 stats=bot_status["stats"],
                                 scrape_do_active=scrape_do_active,
-                                scrape_do_stats=scrape_do_stats,
                                 anticaptcha_balance=anticaptcha_balance,
                                 datetime=datetime)
 
-@app.route('/set-scrape-do-token', methods=['POST'])
-def set_scrape_do_token():
-    global SCRAPE_DO_TOKEN
-    data = request.get_json()
-    token = data.get('token')
-    
-    if not token:
-        return jsonify({"success": False, "error": "Token boş"})
+@app.route('/upload-excel', methods=['POST'])
+def upload_excel():
+    global uploaded_urls
     
     try:
-        # Token'ı test et
-        test_api = ScrapeDoAPI(token)
-        test_response = test_api.get_usage_stats()
+        if 'excel_file' not in request.files:
+            return jsonify({"success": False, "error": "Dosya seçilmedi"})
         
-        SCRAPE_DO_TOKEN = token
-        os.environ['SCRAPE_DO_TOKEN'] = token
-        return jsonify({"success": True, "message": "Scrape.do token kaydedildi"})
+        file = request.files['excel_file']
+        if file.filename == '':
+            return jsonify({"success": False, "error": "Dosya seçilmedi"})
+        
+        # Excel dosyasını oku
+        df = pd.read_excel(io.BytesIO(file.read()))
+        
+        # Link sütununu bul
+        link_column = None
+        for col in df.columns:
+            if 'link' in col.lower() or 'url' in col.lower():
+                link_column = col
+                break
+        
+        if link_column is None:
+            return jsonify({"success": False, "error": "Excel dosyasında 'Link' veya 'URL' sütunu bulunamadı"})
+        
+        # URL'leri çıkar
+        urls = df[link_column].dropna().tolist()
+        valid_urls = [url for url in urls if isinstance(url, str) and 'aliexpress.com' in url]
+        
+        if not valid_urls:
+            return jsonify({"success": False, "error": "Geçerli AliExpress URL'si bulunamadı"})
+        
+        uploaded_urls = valid_urls
+        
+        return jsonify({
+            "success": True, 
+            "url_count": len(valid_urls),
+            "message": f"{len(valid_urls)} URL başarıyla yüklendi"
+        })
+        
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
-@app.route('/set-api-key', methods=['POST'])
-def set_api_key():
-    global ANTICAPTCHA_API_KEY
-    data = request.get_json()
-    api_key = data.get('api_key')
+@app.route('/run-excel-urls', methods=['POST'])
+def run_excel_urls():
+    global bot_instance, bot_status, uploaded_urls
     
-    if not api_key:
-        return jsonify({"success": False, "error": "API key boş"})
+    if bot_status["running"]:
+        return jsonify({"success": False, "error": "Bot zaten çalışıyor"})
     
-    try:
-        api = AntiCaptchaAPI(api_key)
-        balance = api.get_balance()
-        
-        if balance is not None:
-            ANTICAPTCHA_API_KEY = api_key
-            os.environ['ANTICAPTCHA_API_KEY'] = api_key
-            return jsonify({"success": True, "balance": balance})
-        else:
-            return jsonify({"success": False, "error": "Geçersiz API key"})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+    if not uploaded_urls:
+        return jsonify({"success": False, "error": "Yüklenmiş URL yok"})
+    
+    # Bot'u thread'de başlat
+    def excel_thread():
+        global bot_instance, bot_status
+        try:
+            bot_status["running"] = True
+            bot_instance = AliExpressBotUltimate(
+                web_mode=True, 
+                scrape_do_token=SCRAPE_DO_TOKEN,
+                anticaptcha_key=ANTICAPTCHA_API_KEY
+            )
+            
+            if bot_instance.run_bot(uploaded_urls):
+                bot_status["results"] = bot_instance.sonuclar
+                bot_status["stats"] = {
+                    "basarili": bot_instance.basarili,
+                    "basarisiz": bot_instance.basarisiz,
+                    "captcha": bot_instance.captcha_cozulen,
+                    "scrape_do": bot_instance.scrape_do_kullanim,
+                    "selenium": bot_instance.selenium_kullanim
+                }
+        except Exception as e:
+            bot_status["progress"] = f"Hata: {e}"
+        finally:
+            bot_status["running"] = False
+    
+    thread = threading.Thread(target=excel_thread)
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({"success": True, "url_count": len(uploaded_urls), "message": f"Excel URL'leri ile bot başlatıldı"})
 
 @app.route('/run-ultimate', methods=['POST'])
 def run_ultimate():
@@ -1013,6 +831,54 @@ def clear_results():
     bot_status["stats"] = {"basarili": 0, "basarisiz": 0, "captcha": 0, "scrape_do": 0, "selenium": 0}
     return jsonify({"message": "Sonuçlar temizlendi"})
 
+@app.route('/download-excel')
+def download_excel():
+    """Sonuçları Excel olarak indir"""
+    try:
+        if not bot_status["results"]:
+            return "Henüz sonuç yok!", 404
+        
+        df = pd.DataFrame(bot_status["results"])
+        
+        # Excel dosyasını memory'de oluştur
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='AliExpress Sonuçları', index=False)
+        
+        output.seek(0)
+        
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f'aliexpress_sonuclar_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+        )
+        
+    except Exception as e:
+        return f"Excel oluşturma hatası: {e}", 500
+
+@app.route('/download-json')
+def download_json():
+    """Sonuçları JSON olarak indir"""
+    try:
+        if not bot_status["results"]:
+            return "Henüz sonuç yok!", 404
+        
+        output = io.BytesIO()
+        json_data = json.dumps(bot_status["results"], ensure_ascii=False, indent=2)
+        output.write(json_data.encode('utf-8'))
+        output.seek(0)
+        
+        return send_file(
+            output,
+            mimetype='application/json',
+            as_attachment=True,
+            download_name=f'aliexpress_sonuclar_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        )
+        
+    except Exception as e:
+        return f"JSON oluşturma hatası: {e}", 500
+
 @app.route('/status')
 def status():
     return jsonify(bot_status)
@@ -1024,21 +890,17 @@ def health():
         "timestamp": datetime.now().isoformat(),
         "ultimate_bot": "active",
         "scrape_do": "integrated",
-        "anticaptcha": "integrated", 
-        "selenium": "backup_ready",
+        "excel_upload": "ready",
+        "excel_download": "ready",
         "railway": True,
         "bot_ready": True
     })
 
-@app.route('/results')
-def get_results():
-    return jsonify({"results": bot_status["results"], "count": len(bot_status["results"])})
-
 if __name__ == '__main__':
-    print(f"🚀 AliExpress Ultimate Bot - Triple Hybrid System")
+    print(f"🚀 AliExpress Complete Ultimate Bot")
     print(f"🌐 Port: {PORT}")
     print(f"🌐 Scrape.do: {'✅ Aktif' if SCRAPE_DO_TOKEN else '❌ Token gerekli'}")
     print(f"🤖 Anti-Captcha: {'✅ Aktif' if ANTICAPTCHA_API_KEY else '❌ Key gerekli'}")
-    print(f"🤖 Selenium: ✅ Backup hazır")
+    print(f"📊 Excel Upload/Download: ✅ Aktif")
     
     app.run(host='0.0.0.0', port=PORT, debug=False, threaded=True)

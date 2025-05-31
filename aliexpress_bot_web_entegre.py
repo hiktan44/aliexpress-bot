@@ -477,7 +477,7 @@ WEB_TEMPLATE = '''
         <h3>📁 Excel Dosyası Yükle</h3>
         <div class="upload-area">
             <p>📋 Excel dosyanızı buraya sürükleyin veya seçin</p>
-            <p><small>Dosya formatı: Excel (.xlsx) - "Link" sütunu gerekli</small></p>
+            <p><small>Dosya formatı: Excel (.xlsx) - URL sütunu otomatik bulunur (Link, URL, Item Link vs.)</small></p>
             <input type="file" id="excel_file" accept=".xlsx,.xls" onchange="uploadExcel()">
             <div id="upload_status"></div>
         </div>
@@ -567,7 +567,9 @@ https://www.aliexpress.com/item/1005003456789012.html</textarea>
             .then(data => {
                 if (data.success) {
                     document.getElementById('upload_status').innerHTML = 
-                        `✅ ${data.url_count} URL başarıyla yüklendi! Bot otomatik başlatılıyor...`;
+                        `✅ ${data.url_count} URL başarıyla yüklendi!<br>
+                         📋 Kullanılan sütun: <strong>${data.column_used}</strong><br>
+                         🚀 Bot otomatik başlatılıyor...`;
                     
                     // Bot'u otomatik başlat
                     setTimeout(() => {
@@ -767,15 +769,22 @@ def upload_excel():
         # Excel dosyasını oku
         df = pd.read_excel(io.BytesIO(file.read()))
         
-        # Link sütununu bul
+        # Link sütununu bul - daha kapsamlı arama
         link_column = None
+        possible_columns = ['link', 'url', 'item link', 'product link', 'aliexpress link', 
+                          'product url', 'item url', 'link url', 'bağlantı', 'ürün linki']
+        
         for col in df.columns:
-            if 'link' in col.lower() or 'url' in col.lower():
+            if any(keyword in col.lower() for keyword in possible_columns):
                 link_column = col
                 break
         
         if link_column is None:
-            return jsonify({"success": False, "error": "Excel dosyasında 'Link' veya 'URL' sütunu bulunamadı"})
+            available_columns = list(df.columns)
+            return jsonify({
+                "success": False, 
+                "error": f"Excel dosyasında URL sütunu bulunamadı. Mevcut sütunlar: {', '.join(available_columns)}"
+            })
         
         # URL'leri çıkar
         urls = df[link_column].dropna().tolist()
@@ -789,7 +798,8 @@ def upload_excel():
         return jsonify({
             "success": True, 
             "url_count": len(valid_urls),
-            "message": f"{len(valid_urls)} URL başarıyla yüklendi"
+            "column_used": link_column,
+            "message": f"{len(valid_urls)} URL başarıyla yüklendi ('{link_column}' sütunundan)"
         })
         
     except Exception as e:
